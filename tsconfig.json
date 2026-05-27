@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2022", "DOM"], "module": "ESNext",
+    "moduleResolution": "Bundler", "strict": true, "esModuleInterop": true,
+    "skipLibCheck": true, "resolveJsonModule": true, "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src", "tests", "next-env.d.ts"], "exclude": ["node_modules"]
+}

@@ -1,6 +1,8 @@
 import type { Db } from "./db";
 import type { Goal, ElicitationState, ElicitationQuestion, GoalInterpretation } from "./types";
 import type { Genome } from "@/lib/esc/core";
+import type { EscState } from "@/lib/esc/core";
+import type { QueryGenome, StoredSignal, Alert, FeedItemPayload, FeedKind } from "@/lib/p5/types";
 
 // Standalone helper — used by both `create` and `get` so `create` never calls `this.get`.
 function getGoal(db: Db, id: number): Goal | undefined {
@@ -27,6 +29,31 @@ function getElicitation(db: Db, id: number): ElicitationState | undefined {
     beliefWeights: JSON.parse(row.belief_json),
     pendingQuestion: row.pending_question_json ? JSON.parse(row.pending_question_json) : null,
     status: row.status,
+  };
+}
+
+function rowToSignal(row: any): StoredSignal {
+  return {
+    id: row.id,
+    goalId: row.goal_id,
+    genomeId: row.genome_id,
+    source: row.source,
+    kind: row.kind as FeedKind,
+    payload: JSON.parse(row.payload_json) as FeedItemPayload,
+    relevanceScore: row.relevance_score,
+    fetchedAt: row.fetched_at,
+  };
+}
+
+function rowToAlert(row: any): Alert {
+  return {
+    id: row.id,
+    signalId: row.signal_id,
+    goalId: row.goal_id,
+    impactScore: row.impact_score,
+    message: row.message,
+    createdAt: row.created_at,
+    acknowledged: row.acknowledged === 1,
   };
 }
 
@@ -107,5 +134,92 @@ export function makeRepositories(db: Db) {
         if (info.changes === 0) throw new Error(`elicitations.update: no row with id ${id}`);
       },
     },
+    signals: {
+      create(input: {
+        goalId: number;
+        genomeId: string;
+        source: string;
+        kind: FeedKind;
+        payload: FeedItemPayload;
+        relevanceScore: number | null;
+      }): StoredSignal {
+        const info = db
+          .prepare(
+            "INSERT INTO external_signal (goal_id, genome_id, source, kind, payload_json, relevance_score) VALUES (?, ?, ?, ?, ?, ?)"
+          )
+          .run(
+            input.goalId,
+            input.genomeId,
+            input.source,
+            input.kind,
+            JSON.stringify(input.payload),
+            input.relevanceScore
+          );
+        const row = db.prepare("SELECT * FROM external_signal WHERE id = ?").get(Number(info.lastInsertRowid));
+        if (!row) throw new Error(`signals.create: insert ${info.lastInsertRowid} could not be read back`);
+        return rowToSignal(row);
+      },
+      listForGoal(goalId: number, limit?: number): StoredSignal[] {
+        const rows =
+          limit != null
+            ? db.prepare("SELECT * FROM external_signal WHERE goal_id = ? ORDER BY id DESC LIMIT ?").all(goalId, limit)
+            : db.prepare("SELECT * FROM external_signal WHERE goal_id = ? ORDER BY id DESC").all(goalId);
+        return (rows as any[]).map(rowToSignal);
+      },
+      updateRelevance(id: number, relevanceScore: number): void {
+        const info = db.prepare("UPDATE external_signal SET relevance_score = ? WHERE id = ?").run(relevanceScore, id);
+        if (info.changes === 0) throw new Error(`signals.updateRelevance: no row with id ${id}`);
+      },
+    },
+    alerts: {
+      create(input: { signalId: number; goalId: number; impactScore: number; message: string }): Alert {
+        const info = db
+          .prepare("INSERT INTO alert (signal_id, goal_id, impact_score, message) VALUES (?, ?, ?, ?)")
+          .run(input.signalId, input.goalId, input.impactScore, input.message);
+        const row = db.prepare("SELECT * FROM alert WHERE id = ?").get(Number(info.lastInsertRowid));
+        if (!row) throw new Error(`alerts.create: insert ${info.lastInsertRowid} could not be read back`);
+        return rowToAlert(row);
+      },
+      listOpen(goalId: number): Alert[] {
+        const rows = db.prepare("SELECT * FROM alert WHERE goal_id = ? AND acknowledged = 0 ORDER BY id DESC").all(goalId);
+        return (rows as any[]).map(rowToAlert);
+      },
+      acknowledge(id: number): void {
+        const info = db.prepare("UPDATE alert SET acknowledged = 1 WHERE id = ?").run(id);
+        if (info.changes === 0) throw new Error(`alerts.acknowledge: no row with id ${id}`);
+      },
+      existsOpen(goalId: number, signalId: number): boolean {
+        const row = db
+          .prepare("SELECT 1 FROM alert WHERE goal_id = ? AND signal_id = ? AND acknowledged = 0 LIMIT 1")
+          .get(goalId, signalId);
+        return row !== undefined;
+      },
+      engagementCounts(genomeId: string): { acked: number; total: number } {
+        const row = db
+          .prepare(
+            `SELECT COUNT(*) AS total,
+                    COALESCE(SUM(CASE WHEN a.acknowledged = 1 THEN 1 ELSE 0 END), 0) AS acked
+               FROM alert a JOIN external_signal s ON a.signal_id = s.id
+              WHERE s.genome_id = ?`
+          )
+          .get(genomeId) as any;
+        return { acked: Number(row.acked ?? 0), total: Number(row.total ?? 0) };
+      },
+    },
+    queryGenomeState: {
+      get(goalId: number): EscState<QueryGenome> | null {
+        const row = db.prepare("SELECT state_json FROM query_genome_state WHERE goal_id = ?").get(goalId) as any;
+        return row ? (JSON.parse(row.state_json) as EscState<QueryGenome>) : null;
+      },
+      save(goalId: number, state: EscState<QueryGenome>): void {
+        db.prepare(
+          `INSERT INTO query_genome_state (goal_id, state_json, updated_at)
+             VALUES (?, ?, datetime('now'))
+           ON CONFLICT(goal_id) DO UPDATE SET state_json = excluded.state_json, updated_at = datetime('now')`
+        ).run(goalId, JSON.stringify(state));
+      },
+    },
   };
 }
+
+export type Repositories = ReturnType<typeof makeRepositories>;

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS elicitation_state (
 CREATE TABLE IF NOT EXISTS external_signal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   goal_id INTEGER NOT NULL REFERENCES goal(id),
+  genome_id TEXT NOT NULL DEFAULT '',
   source TEXT NOT NULL,
   kind TEXT NOT NULL,
   payload_json TEXT NOT NULL,
@@ -40,4 +41,9 @@ CREATE TABLE IF NOT EXISTS llm_cache (
   response_json TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (prompt_hash, model)
+);
+CREATE TABLE IF NOT EXISTS query_genome_state (
+  goal_id    INTEGER PRIMARY KEY REFERENCES goal(id),
+  state_json TEXT    NOT NULL,
+  updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );

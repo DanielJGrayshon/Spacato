@@ -1,3 +1,10 @@
+function maxScore(scores: number[]): number {
+  if (scores.length === 0) {
+    throw new Error("esc-core: empty population — seed() or select() returned no genomes");
+  }
+  return Math.max(...scores);
+}
+
 export interface Genome<T> { value: T }
 export interface EscState<T> { population: Genome<T>[]; generation: number; bestScore: number; }
 export interface EscConfig<T> {
@@ -25,13 +32,13 @@ export async function step<T>(cfg: EscConfig<T>, state: EscState<T>): Promise<Es
   const parents = cfg.select(state.population, scores);
   const population = await breed(cfg, parents);
   const newScores = await cfg.fitness(population);
-  return { population, generation: state.generation + 1, bestScore: Math.max(...newScores) };
+  return { population, generation: state.generation + 1, bestScore: maxScore(newScores) };
 }
 
 export async function runToConvergence<T>(cfg: EscConfig<T>): Promise<EscState<T>> {
   const seeded = await cfg.seed();
   const scores = await cfg.fitness(seeded);
-  let state: EscState<T> = { population: seeded, generation: 0, bestScore: Math.max(...scores) };
+  let state: EscState<T> = { population: seeded, generation: 0, bestScore: maxScore(scores) };
   while (!cfg.converged(state) && state.generation < cfg.maxGenerations) {
     state = await step(cfg, state);
   }

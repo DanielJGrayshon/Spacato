@@ -27,6 +27,11 @@ describe("esc-core", () => {
     expect(final.generation).toBeLessThanOrEqual(100);
   });
 
+  it("throws a clear error on an empty seed population", async () => {
+    const cfg = { ...mockConfig(), seed: async () => [] };
+    await expect(runToConvergence(cfg)).rejects.toThrow(/empty population/);
+  });
+
   it("step advances exactly one generation", async () => {
     const cfg = mockConfig();
     const seeded = await cfg.seed();

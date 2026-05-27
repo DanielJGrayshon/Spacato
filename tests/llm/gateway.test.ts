@@ -28,7 +28,7 @@ describe("llm-gateway", () => {
     let calls = 0;
     const fetchFn = async () => { calls++; return recordedFetch({ answer: "cached" })(); };
     const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
-    const req = { model: "m", messages: [{ role: "user", content: "q" }], schema };
+    const req = { model: "m", messages: [{ role: "user" as const, content: "q" }], schema };
     await gw.complete(req);
     await gw.complete(req);
     expect(calls).toBe(1);
@@ -36,7 +36,7 @@ describe("llm-gateway", () => {
 
   it("batchComplete resolves all requests", async () => {
     const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn: recordedFetch({ answer: "b" }) });
-    const reqs = [1, 2, 3].map((n) => ({ model: "m", messages: [{ role: "user", content: `q${n}` }], schema }));
+    const reqs = [1, 2, 3].map((n) => ({ model: "m", messages: [{ role: "user" as const, content: `q${n}` }], schema }));
     const outs = await gw.batchComplete(reqs);
     expect(outs).toHaveLength(3);
     expect(outs[0]).toEqual({ answer: "b" });
@@ -76,7 +76,7 @@ describe("llm-gateway", () => {
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: "b" }) } }] }), { status: 200 });
     };
     const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn, maxConcurrency: 2 });
-    const reqs = Array.from({ length: 6 }, (_, n) => ({ model: "m", messages: [{ role: "user", content: `q${n}` }], schema }));
+    const reqs = Array.from({ length: 6 }, (_, n) => ({ model: "m", messages: [{ role: "user" as const, content: `q${n}` }], schema }));
     const outs = await gw.batchComplete(reqs);
     expect(outs).toHaveLength(6);
     expect(maxInFlight).toBeLessThanOrEqual(2);

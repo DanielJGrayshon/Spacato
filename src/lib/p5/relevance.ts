@@ -64,6 +64,7 @@ export async function scoreItems(
 
   return items.map((item, idx) => {
     const k = ks[idx];
+    // has/get (not `?? null`): a genuine LLM score of 0 is valid and must not be coerced to null.
     const llm = llmByIdx.has(idx) ? llmByIdx.get(idx)! : null;
     const finalScore = llm === null ? k : 0.3 * k + 0.7 * llm;
     return { item, keywordScore: k, llmScore: llm, finalScore };

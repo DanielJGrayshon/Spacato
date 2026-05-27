@@ -59,6 +59,18 @@ describe("relevance", () => {
     expect(scored.finalScore).toBe(scored.keywordScore);
   });
 
+  it("re-aligns LLM scores to the original item order across mixed gated/un-gated input", async () => {
+    const offA = item("zzz aaa", "qqq");                       // gated out (no overlap)
+    const onB = item("Marathon training plan", "finish the race under 4 hours"); // gated in
+    const offC = item("vvv www", "uuu");                       // gated out (no overlap)
+    const gw = judgeStub({ "Marathon training plan": 0.6 });
+    const out = await scoreItems([offA, onB, offC], spec, gw, "model");
+    expect(out.map((s) => s.item.id)).toEqual(["zzz aaa", "Marathon training plan", "vvv www"]);
+    expect(out[0].llmScore).toBeNull();
+    expect(out[1].llmScore).toBe(0.6);   // score landed on the correct (middle) item, not index 0
+    expect(out[2].llmScore).toBeNull();
+  });
+
   it("returns every item even when none reach the LLM (no batchComplete call)", async () => {
     let called = false;
     const gw = { async batchComplete<T>(): Promise<T[]> { called = true; return []; } };

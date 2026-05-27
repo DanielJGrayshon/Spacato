@@ -56,6 +56,28 @@ describe("runCycle online loop", () => {
     expect(state.scores.slice(2)).toEqual([GENOME_PRIOR_SCORE, GENOME_PRIOR_SCORE]); // offspring floor
   });
 
+  it("a non-zero-index genome can be the fetcher; non-fetchers carry their specific prior forward", async () => {
+    // Seed an existing state with unequal scores so argmax != 0 (top is index 1 = "b").
+    repos.queryGenomeState.save(goalId, {
+      population: [g("a"), g("b"), g("c"), g("d")],
+      scores: [0.2, 0.8, 0.5, 0.1],
+      generation: 3,
+      bestScore: 0.8,
+    });
+    const res = await runCycle(goalId, deps());
+    // The genome at the top-scoring index ("b"), not "s0"/"a", is the sole fetcher.
+    expect(res.signals.every((s) => s.genomeId === "b")).toBe(true);
+
+    const state = repos.queryGenomeState.get(goalId)!;
+    expect(state.generation).toBe(4);
+    // Fitnesses: fetcher b = mean(0.9,0.9)*engagement(0.5) = 0.45; others carry forward
+    // [a:0.2, c:0.5, d:0.1]. selectTop keeps the top 2 => [c:0.5, b:0.45].
+    expect(state.population.slice(0, 2).map((p) => p.value.id)).toEqual(["c", "b"]);
+    expect(state.scores[0]).toBeCloseTo(0.5, 5);   // non-fetcher "c" kept its specific prior
+    expect(state.scores[1]).toBeCloseTo(0.45, 5);  // fetcher "b" recomputed (relevance*engagement)
+    expect(state.scores.slice(2)).toEqual([GENOME_PRIOR_SCORE, GENOME_PRIOR_SCORE]);
+  });
+
   it("non-fetching genomes carry their prior score forward (no NaN)", async () => {
     await runCycle(goalId, deps());
     const res = await runCycle(goalId, deps());

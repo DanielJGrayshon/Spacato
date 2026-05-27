@@ -34,7 +34,14 @@ export interface CycleDeps {
 const argmax = (xs: number[]): number => xs.reduce((best, x, i) => (x > xs[best] ? i : best), 0);
 const mean = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
-/** One ingest cycle (spec §5.9). Uses score/select/evolve directly — never step(). */
+/** One ingest cycle (spec §5.9). Uses score/select/evolve directly, NOT step():
+ *  step() evaluates fitness on the post-evolution offspring and trims by score, which would
+ *  lose carry-forward and the offspring floor. This online loop scores the CURRENT population
+ *  (fresh score for the fetcher, prior scores carried for the rest), THEN evolves.
+ *
+ *  Invariant: genome `value.id`s are unique within a population — minted fresh via
+ *  crypto.randomUUID() in genome.ts at seed/crossover/mutate, never reused. The fitness
+ *  closure and signal attribution below both key on this id and rely on that uniqueness. */
 export async function runCycle(goalId: number, deps: CycleDeps): Promise<{ signals: StoredSignal[]; alerts: Alert[] }> {
   const { repos, ops, ingest, scoreItems, raiseAlerts } = deps;
 
@@ -75,6 +82,8 @@ export async function runCycle(goalId: number, deps: CycleDeps): Promise<{ signa
     seed: ops.seed,
     crossover: ops.crossover,
     mutate: ops.mutate,
+    // Precondition: invoked only as score(cfg, state.population) below, so `i` is index-aligned
+    // to state.scores. The fetcher is matched by stable id (reorder-safe); carry-forward is by index.
     fitness: async (pop) => pop.map((gen, i) => (gen.value.id === fetchingId ? fetchingFitness : state!.scores[i])),
     select: selectTop,
     converged: () => false,
@@ -93,6 +102,8 @@ export async function runCycle(goalId: number, deps: CycleDeps): Promise<{ signa
     population: nextPop,
     scores: nextScores,
     generation: state.generation + 1,
+    // Per-generation max of the persisted scores (not an all-time high-water mark). Nothing
+    // in the cycle reads bestScore for decisions — argmax uses `scores`.
     bestScore: Math.max(...nextScores),
   };
   repos.queryGenomeState.save(goalId, nextState);

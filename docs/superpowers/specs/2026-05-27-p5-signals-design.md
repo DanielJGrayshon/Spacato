@@ -38,8 +38,8 @@ side news window.
 ## 2. Goals & non-goals
 
 **Goals**
-- A runnable loop: given a `converged_spec`, fetch relevant external items, score them, store the top
-  ones, and raise alerts when an item directly affects the goal.
+- A runnable loop: given a `converged_spec`, fetch relevant external items, score them, store all
+  fetched items with their scores, and raise alerts when a high-scoring item directly affects the goal.
 - ESC proven in its **online lifecycle** — the same `esc-core` composable primitives (`score`,
   `select`, `evolve`) used internally by S0's `runToConvergence` are called directly here, one stage
   per ingest cycle. `step()` and `runToConvergence()` are NOT used.
@@ -93,7 +93,7 @@ feed-ingest          for each (source, queryTerms): fetch → schema-validate �
 relevance            score each item: keyword-overlap → LLM batchComplete<RelevanceResult> judge
   │ ScoredItem[]
   ▼
-repositories         upsert into external_signal (with genome_index = topIdx); return stored signals
+repositories         upsert into external_signal (with genome_id = fetchingGenome.value.id); return stored signals
   │ StoredSignal[]
   ▼
 alert-logic          for each signal: impact ≥ ALERT_THRESHOLD? → existsOpen dedup
@@ -103,8 +103,8 @@ alert-logic          for each signal: impact ≥ ALERT_THRESHOLD? → existsOpen
 repositories         insert new alert rows
   │
   ▼
-esc-adapter          (2) esc-core.score(cfg, state.population) — reads just-written signal rows
-                         carries forward prior scores for non-fetching genomes (no NaN)
+esc-adapter          (2) esc-core.score(cfg, state.population) — cfg.fitness closure uses in-memory
+                         ScoredItem[] for fetching genome; carries forward prior scores for others (no NaN)
                      (3) esc-core.select(cfg, population, scores) → parent genomes
                      (4) esc-core.evolve(cfg, parents) → next-generation population
                      (5) build nextState; initialise offspring scores to GENOME_PRIOR_SCORE
@@ -120,7 +120,7 @@ return { signals, alerts } to client
 
 | Dependency                 | How P5 uses it                                                                                      |
 |----------------------------|-----------------------------------------------------------------------------------------------------|
-| `esc-core.score()`         | Evaluates fitness for the **current** population (reads just-written `external_signal` rows).       |
+| `esc-core.score()`         | Evaluates fitness for the **current** population. `cfg.fitness` closure captures the `ScoredItem[]` from step 3 in memory — no DB read for current-cycle relevance. `external_signal` rows (keyed by `genome_id`) are read only for cross-cycle engagement history. |
 | `esc-core.select()`        | Deterministic parent selection from the scored current population.                                  |
 | `esc-core.evolve()`        | Produces next-generation offspring from the selected parents.                                       |
 | `llm-gateway`              | `batchComplete<T>()` for relevance judging (one schema `T`); separate `batchComplete<T>()` for alert justification (different schema `T`); `complete()` for genome seed. |
@@ -146,6 +146,7 @@ signals: {
   /** Insert a new signal row. Returns the full stored record. */
   create(input: {
     goalId: number;
+    genomeId: string;       // QueryGenome.id of the fetching genome; written to genome_id column
     source: string;
     kind: "news" | "weather" | "market";
     payload: FeedItemPayload;
@@ -166,6 +167,7 @@ signals: {
 interface StoredSignal {
   id: number;
   goalId: number;
+  genomeId: string;           // stable QueryGenome.id that surfaced this signal
   source: string;
   kind: "news" | "weather" | "market";
   payload: FeedItemPayload;   // parsed from payload_json
@@ -232,10 +234,23 @@ CREATE TABLE IF NOT EXISTS query_genome_state (
 );
 ```
 
+**Required column addition to `external_signal`** (also part of this spec's build step):
+
+```sql
+-- Add to the existing external_signal table definition in schema.sql
+genome_id  TEXT NOT NULL DEFAULT ''   -- stable QueryGenome.id; set at signal creation time
+```
+
+`genome_index` (positional) is **not added**. Attribution uses the stable `genome_id` string
+exclusively (see §5.5). The `genome_id` column is used by: (a) `repositories.signals.create()` to
+write the attribution, and (b) the engagement history query in `cfg.fitness` (§5.6) to join
+`external_signal → alert` for cross-cycle engagement ratios.
+
 `EscState<QueryGenome>` survives a `JSON.parse(JSON.stringify(state))` round-trip without loss:
 `EscState<T>` contains only `population: Genome<T>[]`, `scores: number[]`, `generation: number`, and
-`bestScore: number`; `Genome<T>` is `{ value: T }`; `QueryGenome` is a plain object tree. No class
-instances, no `undefined` fields, no Dates. `JSON.stringify` + `JSON.parse` is safe.
+`bestScore: number`; `Genome<T>` is `{ value: T }`; `QueryGenome` is a plain object tree (including
+the `id: string` field). No class instances, no `undefined` fields, no Dates. `JSON.stringify` +
+`JSON.parse` is safe.
 
 Repository:
 
@@ -263,9 +278,15 @@ interface QueryTerm {
 }
 
 interface QueryGenome {
+  id: string;              // stable identity — uuid via crypto.randomUUID() (Node built-in, no dep); minted at seed;
+                           // offspring receive fresh ids at crossover/mutate; NEVER reused.
   queries: QueryTerm[];    // 2–6 entries; each is one source × term-set pairing
 }
 ```
+
+`QueryGenome` is a plain object tree (no class instances, no Dates, no `undefined` fields). The `id`
+field is a plain string and survives the `JSON.parse(JSON.stringify())` round-trip used by
+`queryGenomeState` serialisation without loss — no additional handling required.
 
 **Assumption A1:** population size is fixed at 4 genomes per goal (small enough to keep LLM operator
 cost low; large enough for meaningful selection). `EscConfig.populationSize = 4`.
@@ -286,6 +307,13 @@ User:   Goal spec: {converged_spec_json}
 
 Schema: `z.object({ population: z.array(queryGenomeSchema) })`.
 
+After the LLM response is parsed, **each genome in the seeded population is assigned a fresh stable
+id** before the state is stored:
+
+```ts
+const population = parsed.population.map(g => ({ ...g, id: crypto.randomUUID() }));
+```
+
 The seed call is the **only** LLM call that is NOT batched (it is a one-shot initialisation). It is
 still cached by the gateway (same model + messages → same hash).
 
@@ -303,6 +331,14 @@ User: Parent A queries: {A.queries}
 
 Batched via `batchComplete()` when the `evolve()` loop generates multiple offspring.
 
+**Identity rule:** each crossover offspring receives a **freshly minted id** (`crypto.randomUUID()`), independent
+of both parents' ids. The offspring is a new genome; it has no claim to either parent's engagement
+history:
+
+```ts
+const offspring: QueryGenome = { id: crypto.randomUUID(), queries: parsedQueries };
+```
+
 ### 5.4 Mutate operator
 
 Perturbs one `QueryTerm` in the genome — either swapping the source, replacing one term, or
@@ -316,6 +352,13 @@ User: Current genome: {genome.queries}
 
 Batched alongside crossover in the same `batchComplete()` call.
 
+**Identity rule:** the mutant receives a **freshly minted id** (`crypto.randomUUID()`). Mutation produces a
+distinct genome; it does not inherit the parent's engagement history:
+
+```ts
+const mutant: QueryGenome = { id: crypto.randomUUID(), queries: parsedQueries };
+```
+
 ### 5.5 Per-genome signal attribution and empty-fetch handling
 
 **Which genomes fetch each cycle:** only the **single top-scoring genome** (highest `state.scores[i]`)
@@ -324,13 +367,20 @@ OpenWeatherMap / Alpha Vantage on every cycle, burning free-tier quota. For a si
 selecting the best-known genome to fetch is the right quality/cost trade-off. All other three genomes
 carry their previous scores into the fitness step (see below).
 
-**Attribution:** every `external_signal` row created in a cycle carries a `genome_index` column (INT)
-recording which genome's queries surfaced it. This is set to the index of the top-scoring genome in
-`state.population` (i.e., the fetching genome's index). The fitness function reads this column to
-attribute signals correctly.
+**Attribution:** every `external_signal` row created in a cycle carries a `genome_id` column (TEXT)
+recording the stable id of the genome whose queries surfaced it. This is set to
+`fetchingGenome.value.id` — the stable string id on the `QueryGenome` object, NOT the genome's
+position in the population array. The fitness function and the engagement history query both key on
+this column.
 
-> Schema addition to `external_signal`: add `genome_index INTEGER NOT NULL DEFAULT 0`. This is part
-> of the same build step as `query_genome_state` (§4.3).
+> Schema addition to `external_signal`: add `genome_id TEXT NOT NULL DEFAULT ''`. `genome_index` is
+> **not added** — positional indexing is unstable across `evolve()` reorderings and is replaced
+> entirely by `genome_id`. This is part of the same build step as `query_genome_state` (§4.3).
+
+**Why `genome_id` and not `genome_index`:** after `esc-core.evolve()` the population is rebuilt as
+`[parent0, parent1, offspring0, offspring1]`. A given array index therefore points to a different
+genome each generation. Keying attribution on the stable `id` field eliminates this bug: a genome
+carries the same id for its entire lifetime, regardless of where it sits in the population array.
 
 **Empty-fetch handling (no NaN):** a genome that did not fetch this cycle (all genomes except the top
 scorer) has no new `external_signal` rows attributed to it. Its fitness for this cycle is its
@@ -345,30 +395,44 @@ Fitness is `relevance × engagement`, both in [0, 1]:
 ```
 fitness(genome, idx) =
   if genome fetched this cycle:
-    mean(relevanceScore of external_signal rows with genome_index = idx, created this cycle)
-    × engagementFactor(idx)
+    mean(finalScore of ScoredItem[] captured in memory from step 3 for this genome)
+    × engagementFactor(genome.value.id)
   else:
     state.scores[idx]   ← carry forward; genome is re-evaluated next cycle when it fetches
 ```
 
-**Relevance score** — the mean `relevanceScore` of all `external_signal` rows attributed to this
-genome in this cycle. Relevance scores are already computed and stored (by §6) before the fitness
-function runs, so it reads them directly from the DB. The genome fetched before fitness was computed —
-these are the same genome's signals.
+**Relevance score — read from memory, not the DB.** The `cfg.fitness` closure **captures the
+`ScoredItem[]` array** returned by `relevance.ts` in step 3 of the online cycle (see §5.9). The
+relevance component for the fetching genome is `mean(scoredItems.map(si => si.finalScore))`. For all
+non-fetching genomes the fitness function returns `state.scores[i]` unchanged. This avoids any
+time-windowed DB query for current-cycle fitness and is unambiguous even across cycles with shared
+genome ids.
+
+The `genome_id` stored on `external_signal` rows (§5.5) is used only for the **cross-cycle engagement
+history** query described below — it is a longer-horizon read keyed on stable id, not a current-cycle
+relevance lookup.
 
 **Engagement factor** — for a single-user local app there is no clickstream. Engagement is captured as:
 
 ```
-engagementFactor = (acknowledgedAlerts generated by this genome's signals)
-                 / (totalAlertsGenerated by this genome + 1)   ← Laplace smoothing
+engagementFactor(genomeId) =
+  let acked  = COUNT of alert rows with acknowledged = 1
+                 WHERE signal.genome_id = genomeId
+  let total  = COUNT of alert rows (all)
+                 WHERE signal.genome_id = genomeId
+  return (acked + 0.5) / (total + 1)   ← Laplace smoothing; prior ≈ 0.5
 ```
 
 An alert that has been acknowledged (`acknowledged = 1`) signals the user found it valuable. This is a
-weak signal (alerts are rare), so engagement is initialised to a flat prior of 0.5 when no alerts have
-been generated yet, preventing fitness from collapsing to relevance-only.
+weak signal (alerts are rare), so the Laplace-smoothed prior sits near 0.5 when no alerts exist yet,
+preventing fitness from collapsing to relevance-only.
+
+The engagement query joins `alert` → `external_signal` on `signal_id` and filters by `genome_id` —
+the stable string id on `QueryGenome`, not a positional index.
 
 **Assumption A2:** engagement history accumulates over all past cycles, not just the current one. The
-fitness function queries the `alert` table for historical signal-to-acknowledgement ratios.
+fitness function queries the `alert` table for historical signal-to-acknowledgement ratios, keyed on
+`genome_id`.
 
 ### 5.7 Select operator (deterministic)
 
@@ -416,13 +480,18 @@ One ingest cycle per API request to `/api/signals` for a goal. The exact sequenc
            (first-cycle scores are all equal; topIdx = 0 by default)
 
 3. FETCH   feed-ingest: fetchingGenome.value.queries → raw FeedItem[]
-           relevance.ts: score items (§6) → ScoredItem[]
-           repositories.signals.create(..., genomeIndex: topIdx) for each item above STORE_THRESHOLD
+           relevance.ts: score items (§6) → ScoredItem[]   [captured in memory for step 4]
+           ALL fetched items are stored — there is no score threshold on storage.
+           repositories.signals.create(..., genomeId: fetchingGenome.value.id) for EVERY ScoredItem.
 
 4. SCORE   fitnesses = await esc-core.score(cfg, state.population)
-           cfg.fitness reads the just-written external_signal rows for topIdx;
-           carries forward state.scores[i] for all other indices i ≠ topIdx
+           cfg.fitness is a closure that captures the ScoredItem[] from step 3 in memory.
+           For the fetching genome: fitness = mean(scoredItems.map(si => si.finalScore))
+                                             × engagementFactor(fetchingGenome.value.id)
+           For all other genomes i: fitness = state.scores[i]  (carry forward; no DB read)
            → number[] length = populationSize (NO NaN; see §5.5 empty-fetch handling)
+           NOTE: the stored genome_id on external_signal rows is used only for cross-cycle
+           engagement history (§5.6 engagement query) — NOT for current-cycle relevance lookup.
 
 5. SELECT  parents = esc-core.select(cfg, state.population, fitnesses)
            → top 2 genomes by score (selectTop closure)
@@ -503,7 +572,10 @@ function keywordScore(item: FeedItem, keywords: Set<string>): number {
 ```
 
 **Filter gate:** items with `keywordScore < KEYWORD_MIN_THRESHOLD` (default `0.05`, tunable in
-config) are discarded before the LLM judge runs. This keeps LLM cost proportional to feed volume.
+config) **skip the LLM judge** — they are not passed to `batchComplete`. This keeps LLM cost
+proportional to feed volume. **Sub-threshold items are NOT discarded from storage** — every fetched
+item is stored in `external_signal` (see §5.9 step 3 and §6.4/A4). The keyword gate controls the
+LLM judge path only.
 
 **Rationale for lexical approach vs embedding:** no embedding service is wired into the stack. An
 OpenRouter embedding model (e.g. `text-embedding-ada-002` via the API) would require a second model
@@ -542,13 +614,15 @@ elicit route. Configurable via `P5_JUDGE_MODEL` env var.
 finalScore = 0.3 * keywordScore + 0.7 * llmScore
 ```
 
-If `llmScore` is null (item filtered at keyword gate), `finalScore = keywordScore`. This keeps all
-items in the result set ranked, even those that didn't reach the LLM.
+If `llmScore` is null (item did not pass the keyword gate), `finalScore = keywordScore`. This keeps
+all fetched items in the `ScoredItem[]` result set ranked, even those that didn't reach the LLM.
 
-**Assumption A4:** items with `keywordScore < KEYWORD_MIN_THRESHOLD` are stored with their keyword
-score only (no LLM call made). They are stored in `external_signal` with `relevance_score` set to
-their `keywordScore` so the ESC fitness function can still use them (they will score low and push
-those genome queries down in selection).
+**Assumption A4:** items with `keywordScore < KEYWORD_MIN_THRESHOLD` are **stored** in
+`external_signal` with `relevance_score = keywordScore` (no LLM call was made for them). They are
+not discarded. Storing them means the ESC fitness function (§5.6) still incorporates their low scores
+when computing `mean(finalScores)` for the fetching genome, correctly penalising genome queries that
+surface mostly low-relevance content. The keyword gate decides "send to LLM judge or not"; it does
+NOT decide "store or not."
 
 ---
 
@@ -758,7 +832,7 @@ relevance-maximising queries and engagement will become meaningful as the user i
 No change to the design is required, but this behaviour should be documented in the UI (P6).
 
 **OQ-4 — `query_genome_state` schema migration strategy**
-The spec adds `query_genome_state` (and the `genome_index` column on `external_signal`) to
+The spec adds `query_genome_state` (and the `genome_id` column on `external_signal`) to
 `schema.sql` as explicit build deliverables (§4.3). `openDb()` runs `schema.sql` with `IF NOT EXISTS`,
 so adding the table is non-destructive for existing databases. However, the project currently has no
 migration-version tracking. If a later spec modifies the table, there is no mechanism to detect a
@@ -770,3 +844,32 @@ The spec uses the same model constant (`openai/gpt-4o-mini`) for genome operator
 mutate) and the relevance judge. A stronger model for seed (called once per goal) and a cheaper one
 for repeated judging may improve genome quality without much cost increase. This is a one-constant
 change once OpenRouter model pricing is confirmed.
+
+**OQ-6 — Cross-user warm-start priors ("global best") — future extension, NOT a v1 build item**
+
+The two natural insertion points for meta-learned cold-start priors in the current design are:
+
+1. **S0 `uniformBelief(n)` initialisation** — the prior over goal dimensions is currently uniform.
+   A meta-learned prior (learned from aggregate usage) could replace this, starting each new goal
+   closer to a useful prior and reducing the number of elicitation questions needed to converge.
+
+2. **P5 genome `seed` operator** (§5.2) — the seed LLM prompt currently asks for `populationSize`
+   DISTINCT query sets from scratch. A warm-start prior could bias the initial population toward
+   query strategies that have historically converged quickly on goals of a similar type.
+
+**Why this is out of scope for v1:** Spacato v1 is intentionally single-user and local — there is no
+server, no aggregate data collection, and no mechanism for privacy-preserving aggregation across
+users. The warm-start extension requires: (a) opt-in data collection from multiple users, (b) a
+privacy-preserving aggregation mechanism (e.g. federated averaging or differential privacy), and (c)
+infrastructure to distribute learned priors.
+
+**Known limitation of a single global prior:** the meta-learning literature on cold-start preference
+elicitation (e.g. MAML-style approaches, ProtoNets for preference models) warns that a single global
+prior generalises poorly across diverse goal types — a prior learned from "train for a marathon"
+goals is a bad initialiser for "save for a house deposit" goals. Prefer per-goal-type or clustered
+priors (cluster by goal taxonomy or embedding similarity) over a monolithic global prior.
+
+**Forward compatibility:** the current design already supports this extension at both seams without
+structural change. `uniformBelief(n)` in S0 and the LLM seed prompt in P5 are isolated, trivially
+replaceable with a prior-injecting variant when the infrastructure exists. No v1 code needs to
+anticipate this; it is recorded here as a known extension point.

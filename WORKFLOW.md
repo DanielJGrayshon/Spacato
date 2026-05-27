@@ -43,6 +43,20 @@ Every dispatched worker is primed with this exact rule. The orchestrator holds i
 7. **No check-in theatre.** Don't spawn agents to "summarise progress" or ask "should I continue?".
    Execute; stop only at genuine gates, blockers, or completion.
 
+## Spec drafting (peer-gated, then orchestrator)
+
+Specs earn their way to the orchestrator. The flow:
+
+1. **A drafting colleague writes the spec** from a clear brief (full context, not "go read the repo").
+2. **A second, fresh colleague reads it cold and judges it** — the real test: *"Could I build from this
+   without coming back with questions? Is it up to scratch?"* They report YES, or NO with specific gaps.
+3. **Iterate:** the drafter revises on those gaps; the same reviewer re-judges. Loop until the reviewer
+   signs off ("yes, up to scratch"). The reviewer is a peer, not a rubber stamp — a soft yes helps no one.
+4. **Only then does the orchestrator do the final review** and decide to proceed to a plan.
+
+This keeps spec quality high without the orchestrator burning attention on early drafts — and it's still
+lean: one drafter, one reviewer, iterating, then one orchestrator pass.
+
 ## Quality gates (kept, not multiplied)
 
 - Tests must actually verify behaviour (real dependencies where cheap; mocks only at true seams).

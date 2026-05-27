@@ -35,4 +35,17 @@ describe("s0 orchestrator", () => {
     expect(state.convergedSpec!.scope).toBe("a");
     expect(asked).toBeLessThanOrEqual(6);
   });
+
+  it("stays bounded and still converges when evolve fires (evolveEvery=2)", async () => {
+    const cfg = { maxQuestions: 12, entropyThreshold: 0.5, evolveEvery: 2 };
+    let state = await startElicitation(mockOps(), cfg);
+    let asked = 0;
+    while (state.status === "active" && state.pendingQuestion && asked < 12) {
+      state = await answerQuestion(mockOps(), state, oracle(state.population, state.pendingQuestion), cfg);
+      asked++;
+    }
+    expect(state.status).toBe("converged");
+    expect(state.convergedSpec!.scope).toBe("a");
+    expect(state.population.length).toBeLessThanOrEqual(4); // population stays bounded through evolve
+  });
 });

@@ -29,8 +29,10 @@ export function select<T>(cfg: EscConfig<T>, population: Genome<T>[], scores: nu
   return cfg.select(population, scores);
 }
 
-/** Composable primitive: next population = parents plus one offspring per parent (crossover then mutate). */
-export async function evolve<T>(cfg: EscConfig<T>, parents: Genome<T>[]): Promise<Genome<T>[]> {
+/** Composable primitive: next population = parents plus one offspring per parent.
+ *  Offspring `m` is produced from `parents[m]` and `parents[(m+1) % n]`, appended after the parents:
+ *  the return is `[...parents, ...offspring]` (length `2 * parents.length`). */
+export async function evolve<T>(cfg: Pick<EscConfig<T>, "crossover" | "mutate">, parents: Genome<T>[]): Promise<Genome<T>[]> {
   const offspring: Genome<T>[] = [];
   for (let i = 0; i < parents.length; i++) {
     const a = parents[i];

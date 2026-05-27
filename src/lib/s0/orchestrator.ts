@@ -56,12 +56,27 @@ export async function answerQuestion(
 
   if (next.generation % cfg.evolveEvery === 0) {
     const parents = next.population;
-    const evolved = await evolve({ crossover: ops.crossover, mutate: ops.mutate } as any, parents);
-    const extra = evolved.length - next.belief.weights.length;
-    const avg = next.belief.weights.reduce((s, w) => s + w, 0) / next.belief.weights.length;
-    const weights = [...next.belief.weights, ...new Array(Math.max(0, extra)).fill(avg)];
-    const sum = weights.reduce((s, w) => s + w, 0);
-    next = { ...next, population: evolved, belief: { weights: weights.map((w) => w / sum) } };
+    const parentWeights = next.belief.weights;
+    const n = parents.length;
+    const evolved = await evolve({ crossover: ops.crossover, mutate: ops.mutate }, parents);
+    // evolve returns [...parents, ...offspring]; offspring m came from parents[m] and parents[(m+1)%n].
+    // Parents keep their earned weight; offspring inherit the mean of their two parents' weights.
+    const inherited = evolved.map((_, idx) => {
+      if (idx < n) return parentWeights[idx];
+      const m = idx - n;
+      return (parentWeights[m] + parentWeights[(m + 1) % n]) / 2;
+    });
+    // Bound the population: keep the top-n by weight, then renormalise.
+    const ranked = inherited
+      .map((w, idx) => ({ w, idx }))
+      .sort((x, y) => y.w - x.w)
+      .slice(0, n);
+    const sum = ranked.reduce((s, r) => s + r.w, 0);
+    next = {
+      ...next,
+      population: ranked.map((r) => evolved[r.idx]),
+      belief: { weights: ranked.map((r) => r.w / sum) },
+    };
   }
   return finaliseIfDone(next, cfg);
 }

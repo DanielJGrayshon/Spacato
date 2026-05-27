@@ -49,4 +49,36 @@ describe("llm-gateway", () => {
       gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema })
     ).rejects.toThrow(/no text content/);
   });
+
+  it("does not collide cache for different schemas with identical model+messages", async () => {
+    let calls = 0;
+    const fetchFn = async () => {
+      calls++;
+      const body = calls === 1 ? { answer: "a" } : { value: 1 };
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(body) } }] }), { status: 200 });
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const a = await gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema: z.object({ answer: z.string() }) });
+    const b = await gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema: z.object({ value: z.number() }) });
+    expect(calls).toBe(2);
+    expect(a).toEqual({ answer: "a" });
+    expect(b).toEqual({ value: 1 });
+  });
+
+  it("batchComplete respects maxConcurrency", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchFn = async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: "b" }) } }] }), { status: 200 });
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn, maxConcurrency: 2 });
+    const reqs = Array.from({ length: 6 }, (_, n) => ({ model: "m", messages: [{ role: "user", content: `q${n}` }], schema }));
+    const outs = await gw.batchComplete(reqs);
+    expect(outs).toHaveLength(6);
+    expect(maxInFlight).toBeLessThanOrEqual(2);
+  });
 });

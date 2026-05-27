@@ -3,5 +3,5 @@ export interface Goal {
   title: string;
   rawText: string;
   convergedSpec: unknown | null;
-  status: string;
+  status: "eliciting" | "converged";
 }

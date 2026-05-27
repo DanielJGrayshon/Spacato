@@ -1,6 +1,19 @@
 import type { Db } from "./db";
 import type { Goal } from "./types";
 
+// Standalone helper — used by both `create` and `get` so `create` never calls `this.get`.
+function getGoal(db: Db, id: number): Goal | undefined {
+  const row = db.prepare("SELECT * FROM goal WHERE id = ?").get(id) as any;
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    title: row.title,
+    rawText: row.raw_text,
+    convergedSpec: row.converged_spec_json ? JSON.parse(row.converged_spec_json) : null,
+    status: row.status,
+  };
+}
+
 export function makeRepositories(db: Db) {
   return {
     goals: {
@@ -8,23 +21,26 @@ export function makeRepositories(db: Db) {
         const info = db
           .prepare("INSERT INTO goal (title, raw_text) VALUES (?, ?)")
           .run(input.title, input.rawText);
-        return this.get(Number(info.lastInsertRowid))!;
+        const inserted = getGoal(db, Number(info.lastInsertRowid));
+        if (!inserted) {
+          throw new Error(
+            `Goal insert succeeded (rowid ${info.lastInsertRowid}) but could not be read back`
+          );
+        }
+        return inserted;
       },
       get(id: number): Goal | undefined {
-        const row = db.prepare("SELECT * FROM goal WHERE id = ?").get(id) as any;
-        if (!row) return undefined;
-        return {
-          id: row.id,
-          title: row.title,
-          rawText: row.raw_text,
-          convergedSpec: row.converged_spec_json ? JSON.parse(row.converged_spec_json) : null,
-          status: row.status,
-        };
+        return getGoal(db, id);
       },
       setConvergedSpec(id: number, spec: unknown): void {
-        db.prepare(
-          "UPDATE goal SET converged_spec_json = ?, status = 'converged', updated_at = datetime('now') WHERE id = ?"
-        ).run(JSON.stringify(spec), id);
+        const info = db
+          .prepare(
+            "UPDATE goal SET converged_spec_json = ?, status = 'converged', updated_at = datetime('now') WHERE id = ?"
+          )
+          .run(JSON.stringify(spec), id);
+        if (info.changes === 0) {
+          throw new Error(`setConvergedSpec: no goal found with id ${id}`);
+        }
       },
     },
     llmCache: {

@@ -71,11 +71,16 @@ export async function runCycle(goalId: number, deps: CycleDeps): Promise<{ signa
     })
   );
 
+  // Engagement reflects acknowledged alerts from PAST cycles (spec §5.6). Capture it BEFORE
+  // this cycle's raiseAlerts inserts new (unacknowledged) rows, so the fetcher's own fresh
+  // alerts don't transiently depress its engagement this generation.
+  const fetchingEngagement = engagementFactor(repos, fetchingId);
+
   // ALERTS (injected — see alert-logic.ts)
   const alerts = await raiseAlerts(signals);
 
   // 4. SCORE the CURRENT population (carry-forward for non-fetchers; no step())
-  const fetchingFitness = mean(scoredItems.map((si) => si.finalScore)) * engagementFactor(repos, fetchingId);
+  const fetchingFitness = mean(scoredItems.map((si) => si.finalScore)) * fetchingEngagement;
   const cfg: EscConfig<QueryGenome> = {
     maxGenerations: Number.MAX_SAFE_INTEGER,
     populationSize: POPULATION_SIZE,

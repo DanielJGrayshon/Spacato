@@ -29,6 +29,9 @@ export async function raiseAlerts(
   gw: Gateway,
   model: string
 ): Promise<Alert[]> {
+  // Two dedup gates: existsOpen guards re-processing the SAME signal row within a process
+  // (e.g. a retried call); duplicateContentInOpenAlerts is the cross-cycle guard, since each
+  // cycle mints a fresh signal row id for recurring content (same payload.id + source).
   const qualifying = signals.filter(
     (s) =>
       (s.relevanceScore ?? 0) >= ALERT_THRESHOLD &&

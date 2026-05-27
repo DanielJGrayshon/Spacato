@@ -41,4 +41,12 @@ describe("llm-gateway", () => {
     expect(outs).toHaveLength(3);
     expect(outs[0]).toEqual({ answer: "b" });
   });
+
+  it("throws an attributable error when the response has no text content", async () => {
+    const fetchFn = async () => new Response(JSON.stringify({ choices: [{ message: {} }] }), { status: 200 });
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    await expect(
+      gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema })
+    ).rejects.toThrow(/no text content/);
+  });
 });

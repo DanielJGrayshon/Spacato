@@ -29,8 +29,11 @@ export function makeGateway(deps: GatewayDeps) {
       body: JSON.stringify({ model: req.model, messages: req.messages }),
     });
     if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
-    const json: any = await res.json();
+    const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const content = json.choices?.[0]?.message?.content;
+    if (typeof content !== "string") {
+      throw new Error(`OpenRouter: no text content in response for model "${req.model}" (content was ${String(content)})`);
+    }
     const parsed = req.schema.parse(JSON.parse(content));
     deps.cache.put(hash, req.model, parsed);
     return parsed;

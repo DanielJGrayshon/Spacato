@@ -18,8 +18,13 @@ next-env.d.ts
 
 # Local data
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.sqlite3
 *.db
+
+# Test coverage
+.coverage
 
 # Logs / OS
 *.log

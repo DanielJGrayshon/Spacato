@@ -1,6 +1,6 @@
 # Spacato — Handoff
 
-> Last updated: 2026-05-28. This is the single document a fresh contributor (human or agent) reads to
+> Last updated: 2026-05-28 (acknowledge route landed). This is the single document a fresh contributor (human or agent) reads to
 > resume work. Pair it with `WORKFLOW.md` (how we work) and `docs/canonical-project-graph.md` (the design).
 
 ---
@@ -35,8 +35,10 @@ The OpenRouter key lives only server-side (a Next API route); it never enters th
 **Repo:** github.com/DanielJGrayshon/Spacato. **Branches:**
 - `main` — Phase A foundation + S0 elicitation + **P5 news/signals (spec-fidelity-fixed)** +
   **`next build` route-export fix + Next tsconfig adoption + R1 gateway hardening + TS2352 test fix +
-  gitignore sweep for sqlite WAL/SHM sidecars + `.coverage`**. **81 tests green, `npm run typecheck`
-  clean.** Pushed to `origin/main` on 2026-05-28 (tip `e7509d1`); local and remote are in sync.
+  gitignore sweep for sqlite WAL/SHM sidecars + `.coverage`** + **`/api/alerts/acknowledge` route +
+  handler + CLI caller (closes §9 risk 3 / OQ-3 structurally)**. **89 tests green, `npm run typecheck`
+  clean.** Last pushed to `origin/main` 2026-05-28 (tip `bb17f6c`); local advances to `091f18b`
+  (acknowledge route) — **not yet pushed**.
 - All cleanup branches (`fix/next-build-route-exports`, `backup/cull-2026-05-28`,
   `phase-a-foundation`) deleted locally and on origin during the 2026-05-28 push. Only `main` remains.
 
@@ -57,6 +59,13 @@ The OpenRouter key lives only server-side (a Next API route); it never enters th
   functions (App Router rejects this); tests import inner functions directly from `@/lib/...`. `tsconfig.json`
   adopts Next 14's recommended layout (`isolatedModules`, `jsx: preserve`, Next plugin, `.next/types/**/*.ts`).
   `next build` *should* now succeed; it has still not actually been run (see §9 risk 1).
+- **`/api/alerts/acknowledge` (NEW 2026-05-28, commit `091f18b`):** `src/lib/p5/acknowledge-handler.ts`
+  (zod-validated `{alertId: positive int}`, translates the repo "no row with id N" throw to 404, rethrows
+  others) + `src/app/api/alerts/acknowledge/route.ts` (thin POST, no helper re-exports) +
+  `scripts/ack-alert.mjs` (Node-20 ESM CLI caller; native fetch, no deps; `node scripts/ack-alert.mjs <id>`,
+  `SPACATO_URL` overrides base). Idempotency is silently OK (better-sqlite3 reports `changes === 1` on
+  no-op UPDATEs — documented in the test). Engagement-shift test asserts factor moves 0.25 → 0.75 after
+  ack, proving the second half of P5 fitness is no longer structurally inert (see §9 risk 3 downgrade).
 
 **Spec'd but NOT built:** none currently.
 
@@ -103,8 +112,12 @@ Tables in `schema.sql`: `goal`, `elicitation_state`, `external_signal` (with `ge
 `crypto.randomUUID()`, never reused), `esc-adapter.ts` (`runCycle(goalId, deps)` — primitive-based online loop;
 fitness = `weightedRelevance × engagementFactor`; offspring slots initialised to `GENOME_PRIOR_SCORE = 0.1`),
 `alert-logic.ts` (`raiseAlerts` — threshold `0.75`, `existsOpen` + `duplicateContentInOpenAlerts` (scoped via
-`listByIds`), batched LLM justification).
+`listByIds`), batched LLM justification), `acknowledge-handler.ts` (`handleAcknowledge(input, {repos})` —
+pure, zod-validated; returns `{ok:true} | {error,status:400|404}`).
 **`src/app/api/signals/route.ts`** — `POST` wraps `runCycle`; one ingest cycle per request.
+**`src/app/api/alerts/acknowledge/route.ts`** — `POST` wraps `handleAcknowledge`; flips `alert.acknowledged = 1`.
+**`scripts/ack-alert.mjs`** — Node-20 ESM CLI caller (native fetch, no deps); `node scripts/ack-alert.mjs <id>`,
+`SPACATO_URL` overrides base URL.
 
 ---
 
@@ -126,23 +139,20 @@ fitness = `weightedRelevance × engagementFactor`; offspring slots initialised t
 
 Highest leverage, in order:
 
-1. **`/api/alerts/acknowledge` route + a call site.** P5's engagement factor is structurally pinned near
-   the Laplace prior (0.5) for every genome because nothing in the codebase can set `alert.acknowledged = 1`.
-   The repo method exists (`alerts.acknowledge(id)`) — it needs a route and any caller. Until this lands,
-   P5's selection is relevance-only and the second half of fitness is inert. Cheap.
-
-2. **Deferred minors** — one tidy commit: `queryTermSchema.weight` → `.positive()` in `genome.ts`; consider
+1. **Deferred minors** — one tidy commit: `queryTermSchema.weight` → `.positive()` in `genome.ts`; consider
    pulling `queryWeight` out of `FeedItemPayload` (it's persisting genome-lineage metadata into source-item
    payload, currently harmless because nothing reads it back). See §8 minor list.
 
-3. **Actually run the app.** Now that `next build` is no longer structurally broken (route re-exports
+2. **Actually run the app.** Now that `next build` is no longer structurally broken (route re-exports
    removed, tsconfig Next-aligned), the next obvious smoke test is `npm run build` then `npm run dev`
-   with a real `OPENROUTER_API_KEY` in `.env.local`. See §9 risk 1.
+   with a real `OPENROUTER_API_KEY` in `.env.local`. See §9 risk 1. Bonus: once running, the new
+   `scripts/ack-alert.mjs` gives an end-to-end live exercise of `/api/alerts/acknowledge`.
 
-4. **Then the product gaps:** **P6 (a UI)** so a human can use any of this, and **P2/P3** (the
+3. **Then the product gaps:** **P6 (a UI)** so a human can use any of this, and **P2/P3** (the
    decomposition + sliding-window that are the product's core promise).
 
-*(Untracked-files hygiene + remote-branch cleanup + push to origin were actioned 2026-05-28, commit `e7509d1`.)*
+*(Acknowledge route landed 2026-05-28, commit `091f18b` — closed the previous step 1.
+Untracked-files hygiene + remote-branch cleanup + push to origin were actioned 2026-05-28, commit `e7509d1`.)*
 
 ---
 
@@ -218,9 +228,11 @@ so the local SQLite WAL sidecars and coverage artefacts stop showing as untracke
    interpretation dimensions. Real LLM interpretations are free-text and rarely string-match, so distances
    collapse to ~1.0 and the belief may barely update. Tests passed only because they used single-token values.
    **This likely needs a semantic distance (embeddings) or enumerated/categorical dimensions before S0 works in practice.**
-3. **P5 engagement is structurally inert until an acknowledge route exists.** With no path to set
-   `alert.acknowledged = 1`, every genome's `engagementFactor` is `(0+0.5)/(0+1) = 0.5`. Fitness
-   collapses to relevance-only. Acceptable per spec OQ-3 but worth knowing.
+3. **P5 engagement is wired but unexercised.** ~~Structurally inert until an acknowledge route exists.~~
+   The acknowledge route now exists (commit `091f18b`, §3) and the engagement-shift test proves the
+   factor moves 0.25 → 0.75 after a real ack. But until either a UI (P6) or `scripts/ack-alert.mjs`
+   actually drives the loop in live use, the factor will remain at the Laplace prior in practice. The
+   *mechanism* is no longer the blocker; *exercise* is. Closes OQ-3 structurally.
 4. **`external_signal.genome_id` was added via `CREATE TABLE IF NOT EXISTS` + `DEFAULT ''`.** Any SQLite
    file created before this column existed will NOT have it — `IF NOT EXISTS` only creates the table on
    first run; it does not `ALTER` an existing table. Wipe the DB (`*.sqlite` is gitignored) or write a one-off

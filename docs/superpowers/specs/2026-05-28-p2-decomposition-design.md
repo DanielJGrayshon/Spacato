@@ -65,8 +65,8 @@ POST /api/decompose { goalId }
         │
         ├──► calendar.buildSkeleton(goal.timeframe, today)        ← pure heuristic
         │       returns: { months: MonthSpan[],
-        │                  weeksByMonth: WeekSpan[][],
-        │                  daysByWeek: string[][] }                  (ISO yyyy-mm-dd)
+        │                  weeksByMonth: WeekSpan[][] }
+        │                  // WeekSpan carries its own `dates: string[]`
         │
         ├──► goalCtx = renderGoalContext(goal)                    ← rendered ONCE
         │
@@ -270,12 +270,16 @@ The `wrapItems` boilerplate is the lesson from §9 risk 1 (HANDOFF): LLMs return
 ```ts
 // src/lib/util/calendar.ts
 export interface MonthSpan { monthIndex: number; startDate: string; endDate: string; }
-export interface WeekSpan  { weekIndex: number;  startDate: string; endDate: string; }
+export interface WeekSpan  {
+  weekIndex: number;            // 0-based local to its parent month
+  startDate: string;
+  endDate: string;
+  dates: string[];              // ISO yyyy-mm-dd, inclusive
+}
 
 export interface CalendarSkeleton {
   months: MonthSpan[];
   weeksByMonth: WeekSpan[][];   // weeksByMonth[i] = weeks within months[i]
-  daysByWeek:   string[][];     // flattened in week-traversal order; ISO yyyy-mm-dd
 }
 
 export function buildSkeleton(
@@ -292,7 +296,7 @@ Algorithm.
    - Anything else → throws with `"unparseable timeframe: <input>"`.
 2. Month spans are **rolling** (not calendar-month-boundary-aligned). For `i in 0..numMonths-1`: `span[i].startDate = today + i calendar months`; `span[i].endDate = min(today + (i+1) calendar months − 1 day, end)`. The last span's `endDate` is clamped to `end`. This gives exactly `numMonths` spans of ~30 days each — matching the user's mental model of "N months from now" rather than producing a sliver-month-at-start artefact.
 3. Within each month span: 7-day week spans starting from the span's `startDate`. The final week of a span clips at the span's `endDate` (may be 1–6 days). No week straddles two month-spans. A 30-day span produces 4 full weeks + 1 clipped 2-day week (5 weekly nodes); a 31-day span produces 4 full + 1 clipped 3-day (5 weekly nodes); etc.
-4. Within each week span: `daysByWeek[w] = [startDate, …, endDate]` as ISO strings, inclusive.
+4. Within each week span: `weeksByMonth[i][j].dates = [startDate, …, endDate]` as ISO strings, inclusive. (No separate top-level `daysByWeek` array — dates co-locate on `WeekSpan` to avoid non-parallel indexing.)
 
 Worked example for `buildSkeleton("6 months", "2026-05-28")`:
 - `numMonths = 6`, `end = 2026-11-28`.

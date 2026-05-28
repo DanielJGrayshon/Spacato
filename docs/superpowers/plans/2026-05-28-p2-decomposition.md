@@ -73,7 +73,7 @@ Implements §6.1 of the spec: parses `"N months"` / `"N weeks"` / `"by YYYY-MM-D
 
     it("emits exactly 185 dates for '6 months' from 2026-05-28", () => {
       const skel = buildSkeleton("6 months", "2026-05-28");
-      const allDates = skel.daysByWeek.flat();
+      const allDates = skel.weeksByMonth.flatMap((ws) => ws.flatMap((w) => w.dates));
       expect(allDates).toHaveLength(185);
       expect(allDates[0]).toBe("2026-05-28");
       expect(allDates.at(-1)).toBe("2026-11-28");
@@ -102,7 +102,7 @@ Implements §6.1 of the spec: parses `"N months"` / `"N weeks"` / `"by YYYY-MM-D
       expect(skel.months).toHaveLength(1);
       expect(skel.months[0].startDate).toBe("2026-05-28");
       expect(skel.months[0].endDate).toBe("2026-06-17"); // 2026-05-28 + 21 days = 06-18, minus 1 inclusive = 06-17
-      expect(skel.daysByWeek.flat()).toHaveLength(21);
+      expect(skel.weeksByMonth.flatMap((ws) => ws.flatMap((w) => w.dates))).toHaveLength(21);
     });
 
     it("throws on unparseable timeframe", () => {
@@ -136,15 +136,15 @@ Implements §6.1 of the spec: parses `"N months"` / `"N weeks"` / `"by YYYY-MM-D
   }
 
   export interface WeekSpan {
-    weekIndex: number;
+    weekIndex: number;       // 0-based, local to its parent month
     startDate: string;
     endDate: string;
+    dates: string[];         // ISO yyyy-mm-dd, inclusive
   }
 
   export interface CalendarSkeleton {
     months: MonthSpan[];
     weeksByMonth: WeekSpan[][];
-    daysByWeek: string[][];  // flattened in (month, week) traversal order
   }
 
   const MS_PER_DAY = 86_400_000;
@@ -219,27 +219,25 @@ Implements §6.1 of the spec: parses `"N months"` / `"N weeks"` / `"by YYYY-MM-D
     }
 
     const weeksByMonth: WeekSpan[][] = [];
-    const daysByWeek: string[][] = [];
-    let globalWeekIndex = 0;
     for (const m of months) {
       const weeks: WeekSpan[] = [];
       let cursor = m.startDate;
+      let localWeekIndex = 0;
       while (cursor <= m.endDate) {
         let weekEnd = addDays(cursor, 6);
         if (weekEnd > m.endDate) weekEnd = m.endDate;
-        weeks.push({ weekIndex: globalWeekIndex++, startDate: cursor, endDate: weekEnd });
 
         const dates: string[] = [];
         const dayCount = daysBetweenInclusive(cursor, weekEnd);
         for (let d = 0; d < dayCount; d++) dates.push(addDays(cursor, d));
-        daysByWeek.push(dates);
 
+        weeks.push({ weekIndex: localWeekIndex++, startDate: cursor, endDate: weekEnd, dates });
         cursor = addDays(weekEnd, 1);
       }
       weeksByMonth.push(weeks);
     }
 
-    return { months, weeksByMonth, daysByWeek };
+    return { months, weeksByMonth };
   }
   ```
 
@@ -1583,18 +1581,16 @@ Depends on **Tasks 1, 3, 4, 5**. Orchestrator owns every side effect: renders th
     );
 
     // Flatten layer-3 fan-out with all parent refs prepared up front.
+    // WeekSpan.dates carries the ISO date array directly (T1 refactor: I-2 from code review).
     interface FlatWeek {
       monthIndex: number;
       weekIndexInMonth: number;
-      globalWeekIndex: number;
       weeklyInit: { objective: string; description: string };
-      weekSpan: { startDate: string; endDate: string };
-      dates: string[];
+      weekSpan: { startDate: string; endDate: string; dates: string[] };
       parentMonthlyCtx: string;
       weeklyCtx: string;
     }
     const flatWeeks: FlatWeek[] = [];
-    let globalWeekIndex = 0;
     for (let i = 0; i < skeleton.months.length; i++) {
       const monthlyCtxStr = renderMonthlyContext(monthlyInits[i], skeleton.months[i]);
       for (let j = 0; j < skeleton.weeksByMonth[i].length; j++) {
@@ -1603,14 +1599,11 @@ Depends on **Tasks 1, 3, 4, 5**. Orchestrator owns every side effect: renders th
         flatWeeks.push({
           monthIndex: i,
           weekIndexInMonth: j,
-          globalWeekIndex,
           weeklyInit,
           weekSpan,
-          dates: skeleton.daysByWeek[globalWeekIndex],
           parentMonthlyCtx: monthlyCtxStr,
           weeklyCtx: renderWeeklyContext(weeklyInit, weekSpan),
         });
-        globalWeekIndex++;
       }
     }
 
@@ -1618,7 +1611,7 @@ Depends on **Tasks 1, 3, 4, 5**. Orchestrator owns every side effect: renders th
     const dailyInitsByWeek = await Promise.all(
       flatWeeks.map((w) =>
         withRetry(() => deps.ops.decomposeWeeklyToDaily(
-          goalCtx, w.parentMonthlyCtx, w.weeklyCtx, w.dates,
+          goalCtx, w.parentMonthlyCtx, w.weeklyCtx, w.weekSpan.dates,
         )),
       ),
     );

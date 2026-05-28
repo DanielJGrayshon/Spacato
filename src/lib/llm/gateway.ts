@@ -22,6 +22,16 @@ function schemaFingerprint<T>(schema: ZodType<T>): string {
   return JSON.stringify(zodToJsonSchema(schema));
 }
 
+/** Some models (e.g. OpenAI gpt-4o-mini via OpenRouter) wrap structured output in a
+ *  markdown code fence even when asked for JSON only. Strip an opening ```json / ```
+ *  and a closing ``` defensively before JSON.parse. */
+function stripJsonFence(s: string): string {
+  let out = s.trim();
+  out = out.replace(/^```(?:json)?\s*\n?/i, "");
+  out = out.replace(/\n?\s*```\s*$/i, "");
+  return out.trim();
+}
+
 export function makeGateway(deps: GatewayDeps) {
   const fetchFn = deps.fetchFn ?? fetch;
   const endpoint = deps.endpoint ?? "https://openrouter.ai/api/v1/chat/completions";
@@ -43,7 +53,7 @@ export function makeGateway(deps: GatewayDeps) {
     if (typeof content !== "string") {
       throw new Error(`OpenRouter: no text content in response for model "${req.model}" (content was ${String(content)})`);
     }
-    const parsed = req.schema.parse(JSON.parse(content));
+    const parsed = req.schema.parse(JSON.parse(stripJsonFence(content)));
     deps.cache.put(hash, req.model, parsed);
     return parsed;
   }

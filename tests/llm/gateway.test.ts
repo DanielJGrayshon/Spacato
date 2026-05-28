@@ -24,6 +24,28 @@ describe("llm-gateway", () => {
     expect(out).toEqual({ answer: "hi" });
   });
 
+  it("strips a ```json markdown fence around the model's JSON before parsing", async () => {
+    const fenced = '```json\n{"answer":"hi"}\n```';
+    const fetchFn = async () => new Response(
+      JSON.stringify({ choices: [{ message: { content: fenced } }] }),
+      { status: 200 }
+    );
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const out = await gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema });
+    expect(out).toEqual({ answer: "hi" });
+  });
+
+  it("strips a bare ``` fence (no language tag) before parsing", async () => {
+    const fenced = '```\n{"answer":"hi"}\n```';
+    const fetchFn = async () => new Response(
+      JSON.stringify({ choices: [{ message: { content: fenced } }] }),
+      { status: 200 }
+    );
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const out = await gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema });
+    expect(out).toEqual({ answer: "hi" });
+  });
+
   it("serves the second identical call from cache (no second fetch)", async () => {
     let calls = 0;
     const fetchFn = async () => { calls++; return recordedFetch({ answer: "cached" })(); };

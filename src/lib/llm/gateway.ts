@@ -3,7 +3,12 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { promptHash } from "./hash";
 
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string; }
-export interface LlmRequest<T> { model: string; messages: ChatMessage[]; schema: ZodType<T>; }
+export interface LlmRequest<T> {
+  model: string;
+  messages: ChatMessage[];
+  schema: ZodType<T>;
+  bypassCache?: boolean;   // when true: skip cache read AND skip cache write
+}
 export interface CachePort {
   get(hash: string, model: string): unknown | undefined;
   put(hash: string, model: string, response: unknown): void;
@@ -41,8 +46,10 @@ export function makeGateway(deps: GatewayDeps) {
 
   async function complete<T>(req: LlmRequest<T>): Promise<T> {
     const hash = promptHash(req.model, req.messages, schemaFingerprint(req.schema));
-    const cached = deps.cache.get(hash, req.model);
-    if (cached !== undefined) return req.schema.parse(cached);
+    if (!req.bypassCache) {
+      const cached = deps.cache.get(hash, req.model);
+      if (cached !== undefined) return req.schema.parse(cached);
+    }
 
     const res = await fetchFn(endpoint, {
       method: "POST",
@@ -67,7 +74,9 @@ export function makeGateway(deps: GatewayDeps) {
       throw new Error(`OpenRouter: no text content in response for model "${req.model}" (content was ${String(content)})`);
     }
     const parsed = req.schema.parse(JSON.parse(stripJsonFence(content)));
-    deps.cache.put(hash, req.model, parsed);
+    if (!req.bypassCache) {
+      deps.cache.put(hash, req.model, parsed);
+    }
     return parsed;
   }
 

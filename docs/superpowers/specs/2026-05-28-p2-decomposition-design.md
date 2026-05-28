@@ -147,7 +147,7 @@ POST /api/decompose { goalId }
 CREATE TABLE IF NOT EXISTS decomposition (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   goal_id          INTEGER NOT NULL REFERENCES goal(id),
-  created_at       INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now'))   -- ISO-8601 UTC; matches the rest of the schema
 );
 
 CREATE TABLE IF NOT EXISTS monthly (
@@ -204,7 +204,7 @@ Typical 6-month plan: 1 + 6 + ~28 + 185 ≈ **220 rows** total (1 decomposition,
 
 ```ts
 // src/lib/store/types.ts (additions)
-export interface Decomposition { id: number; goalId: number; createdAt: number; }
+export interface Decomposition { id: number; goalId: number; createdAt: string; }
 
 export interface Monthly {
   id: number; decompositionId: number;

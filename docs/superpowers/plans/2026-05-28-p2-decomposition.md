@@ -526,7 +526,7 @@ Implements §5 of the spec: four new tables (`decomposition`, `monthly`, `weekly
   CREATE TABLE IF NOT EXISTS decomposition (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     goal_id          INTEGER NOT NULL REFERENCES goal(id),
-    created_at       INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS monthly (
@@ -598,7 +598,7 @@ Implements §5 of the spec: four new tables (`decomposition`, `monthly`, `weekly
   export interface Decomposition {
     id: number;
     goalId: number;
-    createdAt: number;
+    createdAt: string;
   }
 
   export interface Monthly {

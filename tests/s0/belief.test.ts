@@ -84,6 +84,22 @@ describe("makeDistanceFn", () => {
     const d = makeDistanceFn({});
     expect(d(a, b)).toBe(jaccardDistance(a, b));
   });
+  it("looks up vectors by content (not by reference); property-insertion order doesn't matter", () => {
+    // Same logical interpretation, different property-insertion orders.
+    const ref: GoalInterpretation = { scope: "x", successMetric: "m", constraints: "c", motivation: "mo", deadlineShape: "d" };
+    const reordered: GoalInterpretation = { deadlineShape: "d", motivation: "mo", constraints: "c", successMetric: "m", scope: "x" };
+    const other: GoalInterpretation = { scope: "y", successMetric: "m", constraints: "c", motivation: "mo", deadlineShape: "d" };
+    const vectors = { [contentHash(ref)]: [1, 0], [contentHash(other)]: [0, 1] };
+    const d = makeDistanceFn(vectors);
+    // If the lookup were reference-based or insertion-order-sensitive, this would Jaccard-fallback instead of cosine.
+    expect(d(reordered, other)).toBeCloseTo(0.5);
+  });
+  it("TAU=0.2: sigma on a fractional distance pair is locked to its expected value", () => {
+    // distance(target, A) = 0.3, distance(target, B) = 0.6 → sigma should be exp(-0.3/0.2)/(exp(-0.3/0.2)+exp(-0.6/0.2)) ≈ 0.8175745.
+    const synth: DistanceFn = (_a, b) => (b.scope === "near" ? 0.3 : 0.6);
+    const pop = [gi("target"), gi("near"), gi("far")].map((value) => ({ value }));
+    expect(sigma(pop, 0, 1, 2, synth)).toBeCloseTo(0.8175745, 5);
+  });
 });
 
 describe("sigma + updateBelief with injected DistanceFn", () => {

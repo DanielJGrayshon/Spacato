@@ -37,8 +37,7 @@ The OpenRouter key lives only server-side (a Next API route); it never enters th
   **`next build` route-export fix + Next tsconfig adoption + R1 gateway hardening + TS2352 test fix +
   gitignore sweep for sqlite WAL/SHM sidecars + `.coverage`** + **`/api/alerts/acknowledge` route +
   handler + CLI caller (closes §9 risk 3 / OQ-3 structurally)**. **89 tests green, `npm run typecheck`
-  clean.** Last pushed to `origin/main` 2026-05-28 (tip `bb17f6c`); local advances to `091f18b`
-  (acknowledge route) — **not yet pushed**.
+  clean.** Pushed to `origin/main` on 2026-05-28 (tip `c0465e4`); local and remote are in sync.
 - All cleanup branches (`fix/next-build-route-exports`, `backup/cull-2026-05-28`,
   `phase-a-foundation`) deleted locally and on origin during the 2026-05-28 push. Only `main` remains.
 

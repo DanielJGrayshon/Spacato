@@ -49,7 +49,13 @@ describe("elicit route handler", () => {
       const state = repos.elicitations.get(res.elicitationId)!;
       const aVal = state.population[res.question.a].value.scope;
       const bVal = state.population[res.question.b].value.scope;
-      const ans: "a" | "b" = aVal.includes("alpha") ? "a" : bVal.includes("alpha") ? "b" : "a";
+      // Content-driven oracle: prefer 'alpha' when present in EITHER operand. When neither operand
+      // is 'alpha', alternate to avoid biasing the belief toward whichever literal answer the test
+      // would otherwise default to.
+      const ans: "a" | "b" =
+        aVal.includes("alpha") ? "a"
+        : bVal.includes("alpha") ? "b"
+        : (guard % 2 === 0 ? "a" : "b");
       res = await handleElicit(
         { action: "answer", elicitationId: res.elicitationId, answer: ans },
         { repos, ops: ops(), embed: makeStubEmbed() },

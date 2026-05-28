@@ -6,8 +6,8 @@ import type { ElicitationOps } from "@/lib/s0/orchestrator";
 import type { GoalInterpretation } from "@/lib/store/types";
 
 // Four real-LLM-style interpretations with NO exact-token matches across the 5 dimensions.
-// Old exact-Hamming distance would have collapsed every pairwise distance to ~1.0
-// and the belief would barely move. Embedding-based distance produces meaningful gradients.
+// Exact-Hamming distance on these texts would collapse every pairwise distance to ~1.0
+// and leave the belief barely movable; cosine over embeddings produces meaningful gradients.
 const interpretations: GoalInterpretation[] = [
   { scope: "complete a marathon race",      successMetric: "finishing the marathon",
     constraints: "must train regularly without injury", motivation: "personal achievement and fitness",
@@ -55,9 +55,18 @@ describe("S0 semantic-distance regression guard", () => {
     const before = repos.elicitations.get(start.elicitationId)!;
     expect(before.beliefWeights.every((w) => Math.abs(w - 0.25) < 1e-6)).toBe(true);
 
-    // Answer in favour of the marathon-race candidate (index 0).
+    // Answer in favour of the marathon/running pole — content-driven, not index-positional.
+    // If selectQuestion ever returns a pair like {1,2} (running vs stock), this still picks running.
     const q = start.question!;
-    const answer: "a" | "b" = q.a === 0 ? "a" : "b";
+    const isMarathonPole = (idx: number) => {
+      const s = interpretations[idx];
+      return s.scope.includes("marathon") || s.scope.includes("running");
+    };
+    const answer: "a" | "b" = isMarathonPole(q.a) ? "a" : isMarathonPole(q.b) ? "b" : "a";
+    // Guard: at least one operand must be on the marathon pole — otherwise the assertion below would
+    // pass for the wrong reason. With orthogonal axes and uniform belief, selectQuestion's chosen
+    // pair always includes at least one of indices 0 or 1; assert that loudly if it ever doesn't.
+    expect(isMarathonPole(q.a) || isMarathonPole(q.b)).toBe(true);
     await handleElicit(
       { action: "answer", elicitationId: start.elicitationId, answer },
       { repos, ops: ops(), embed: stubEmbed() },

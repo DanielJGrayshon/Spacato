@@ -117,6 +117,7 @@ describe("bypassCache", () => {
     });
 
     expect(cache.put).not.toHaveBeenCalled();
+    expect(fetchFn).toHaveBeenCalledOnce();
   });
 
   it("uses the cache normally when bypassCache is false or absent", async () => {

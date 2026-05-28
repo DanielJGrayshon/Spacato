@@ -7,7 +7,7 @@ export interface LlmRequest<T> {
   model: string;
   messages: ChatMessage[];
   schema: ZodType<T>;
-  bypassCache?: boolean;   // when true: skip cache read AND skip cache write
+  bypassCache?: boolean;
 }
 export interface CachePort {
   get(hash: string, model: string): unknown | undefined;

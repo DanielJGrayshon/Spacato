@@ -314,8 +314,12 @@ id** before the state is stored:
 const population = parsed.population.map(g => ({ ...g, id: crypto.randomUUID() }));
 ```
 
-The seed call is the **only** LLM call that is NOT batched (it is a one-shot initialisation). It is
-still cached by the gateway (same model + messages → same hash).
+The seed call is a single one-shot `complete()` initialisation. The genome operators (crossover,
+mutate) also call `complete()` per genome rather than `batchComplete()`, but they are dispatched
+**concurrently** by the parallelised `esc-core.evolve` (see §5.3/§5.4): all crossovers for the
+offspring run in one `Promise.all` phase, then all mutates in the next. This yields the same
+latency benefit as a batch without changing the operator contract. All calls are cached by the
+gateway (same model + messages → same hash).
 
 ### 5.3 Crossover operator
 
@@ -329,7 +333,10 @@ User: Parent A queries: {A.queries}
       Keep terms most likely to surface goal-relevant signals.
 ```
 
-Batched via `batchComplete()` when the `evolve()` loop generates multiple offspring.
+Implemented as the `crossover` operator passed to `EscConfig`; it calls `llm-gateway.complete()`.
+When `evolve()` generates multiple offspring, `esc-core.evolve` runs every offspring's crossover
+**concurrently** in a single `Promise.all` phase (the mutate phase follows), so the calls overlap
+even though each operator is a one-genome `complete()`.
 
 **Identity rule:** each crossover offspring receives a **freshly minted id** (`crypto.randomUUID()`), independent
 of both parents' ids. The offspring is a new genome; it has no claim to either parent's engagement
@@ -350,7 +357,10 @@ User: Current genome: {genome.queries}
       The goal spec for context: {converged_spec_json}
 ```
 
-Batched alongside crossover in the same `batchComplete()` call.
+Implemented as the `mutate` operator (a one-genome `complete()` call). `esc-core.evolve` runs all
+offspring mutates **concurrently** in a `Promise.all` phase that follows the crossover phase, so the
+mutate calls overlap with each other (though not with crossover, since each mutate consumes its
+crossover's output).
 
 **Identity rule:** the mutant receives a **freshly minted id** (`crypto.randomUUID()`). Mutation produces a
 distinct genome; it does not inherit the parent's engagement history:
@@ -386,7 +396,8 @@ carries the same id for its entire lifetime, regardless of where it sits in the 
 scorer) has no new `external_signal` rows attributed to it. Its fitness for this cycle is its
 **previous score** carried forward from `state.scores[i]`. This is the score already stored in
 `EscState`. The fitness function therefore only computes a new score for the fetching genome and
-returns the prior scores unchanged for all others. `mean([])` is never called.
+returns the prior scores unchanged for all others. The weighted-relevance helper is never invoked on
+an empty set, and it guards `Σweight = 0` by returning 0 — no NaN.
 
 ### 5.6 Fitness function
 
@@ -395,7 +406,8 @@ Fitness is `relevance × engagement`, both in [0, 1]:
 ```
 fitness(genome, idx) =
   if genome fetched this cycle:
-    mean(finalScore of ScoredItem[] captured in memory from step 3 for this genome)
+    weightedRelevance(ScoredItem[] captured in memory from step 3 for this genome)
+      = Σ(finalScore × queryWeight) / Σ(queryWeight)        (queryWeight defaults to 1)
     × engagementFactor(genome.value.id)
   else:
     state.scores[idx]   ← carry forward; genome is re-evaluated next cycle when it fetches
@@ -403,7 +415,9 @@ fitness(genome, idx) =
 
 **Relevance score — read from memory, not the DB.** The `cfg.fitness` closure **captures the
 `ScoredItem[]` array** returned by `relevance.ts` in step 3 of the online cycle (see §5.9). The
-relevance component for the fetching genome is `mean(scoredItems.map(si => si.finalScore))`. For all
+relevance component for the fetching genome is `weightedRelevance(scoredItems)` — the mean of
+`finalScore` weighted by each item's `queryWeight` (§5.1), which reduces to a plain mean when all
+weights are equal. For all
 non-fetching genomes the fitness function returns `state.scores[i]` unchanged. This avoids any
 time-windowed DB query for current-cycle fitness and is unambiguous even across cycles with shared
 genome ids.
@@ -449,6 +463,12 @@ const selectTop = (pop: Genome<QueryGenome>[], scores: number[]): Genome<QueryGe
     .map(({ i }) => pop[i]);
 ```
 
+`QueryTerm.weight` reaches selection **transitively**: `selectTop` ranks purely on the `scores`
+array, and those scores are the fitness values produced in §5.6, whose relevance term is now a
+`weight`-weighted mean of the fetched items' `finalScore`s. `selectTop` itself takes no direct
+dependency on `weight` — a higher-weighted query raises a genome's fitness, which in turn makes it
+more likely to be selected.
+
 ### 5.8 Converged predicate
 
 P5 **never converges** — the converged predicate is always `false`. It is included in `EscConfig`
@@ -486,8 +506,9 @@ One ingest cycle per API request to `/api/signals` for a goal. The exact sequenc
 
 4. SCORE   fitnesses = await esc-core.score(cfg, state.population)
            cfg.fitness is a closure that captures the ScoredItem[] from step 3 in memory.
-           For the fetching genome: fitness = mean(scoredItems.map(si => si.finalScore))
+           For the fetching genome: fitness = weightedRelevance(scoredItems)
                                              × engagementFactor(fetchingGenome.value.id)
+                  where weightedRelevance = Σ(finalScore × queryWeight) / Σ(queryWeight), default w=1
            For all other genomes i: fitness = state.scores[i]  (carry forward; no DB read)
            → number[] length = populationSize (NO NaN; see §5.5 empty-fetch handling)
            NOTE: the stored genome_id on external_signal rows is used only for cross-cycle
@@ -620,7 +641,7 @@ all fetched items in the `ScoredItem[]` result set ranked, even those that didn'
 **Assumption A4:** items with `keywordScore < KEYWORD_MIN_THRESHOLD` are **stored** in
 `external_signal` with `relevance_score = keywordScore` (no LLM call was made for them). They are
 not discarded. Storing them means the ESC fitness function (§5.6) still incorporates their low scores
-when computing `mean(finalScores)` for the fetching genome, correctly penalising genome queries that
+when computing `weightedRelevance(finalScores)` for the fetching genome, correctly penalising genome queries that
 surface mostly low-relevance content. The keyword gate decides "send to LLM judge or not"; it does
 NOT decide "store or not."
 

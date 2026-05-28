@@ -31,13 +31,15 @@ export function makeGenomeOperators(gw: Gateway, spec: GoalInterpretation, popul
   const sourceList = Object.values(SOURCES).map((s) => `${s.key}: ${s.description}`).join("\n");
   const sys = { role: "system" as const, content: "You generate search-query sets for a news/signals aggregator. Reply only with JSON matching the schema." };
 
+  const shapeRule = `The "source" field MUST be exactly one of these three string values: "newsapi", "openweather", or "alphavantage".`;
+
   return {
     async seed(): Promise<Genome<QueryGenome>[]> {
       const out = await gw.complete({
         model,
         messages: [
           sys,
-          { role: "user" as const, content: `Goal spec: ${JSON.stringify(spec)}\nAvailable sources:\n${sourceList}\nProduce ${populationSize} DISTINCT query sets (2-4 queries each) that would surface news, weather, or market events relevant to this goal. Vary them in focus and breadth.` },
+          { role: "user" as const, content: `Goal spec: ${JSON.stringify(spec)}\nAvailable sources:\n${sourceList}\nProduce ${populationSize} DISTINCT query sets (2-4 queries each) that would surface news, weather, or market events relevant to this goal. Vary them in focus and breadth.\nReply ONLY with a JSON OBJECT shaped exactly like {"population":[{"queries":[{"source":"newsapi","terms":["..."],"weight":1}, ...]}, ...]}; do NOT return a bare top-level array. ${shapeRule}` },
         ],
         schema: seedSchema,
       });
@@ -49,7 +51,7 @@ export function makeGenomeOperators(gw: Gateway, spec: GoalInterpretation, popul
         model,
         messages: [
           sys,
-          { role: "user" as const, content: `Parent A queries: ${JSON.stringify(a.value.queries)}\nParent B queries: ${JSON.stringify(b.value.queries)}\nMerge into a single coherent query set of 2-4 entries. Remove duplicates. Keep terms most likely to surface goal-relevant signals.` },
+          { role: "user" as const, content: `Parent A queries: ${JSON.stringify(a.value.queries)}\nParent B queries: ${JSON.stringify(b.value.queries)}\nMerge into a single coherent query set of 2-4 entries. Remove duplicates. Keep terms most likely to surface goal-relevant signals.\nReply ONLY with a JSON OBJECT shaped exactly like {"queries":[{"source":"newsapi","terms":["..."],"weight":1}, ...]}. ${shapeRule}` },
         ],
         schema: genomeBodySchema,
       });
@@ -61,7 +63,7 @@ export function makeGenomeOperators(gw: Gateway, spec: GoalInterpretation, popul
         model,
         messages: [
           sys,
-          { role: "user" as const, content: `Current genome: ${JSON.stringify(g.value.queries)}\nMutate exactly ONE query term (change its source, refine its terms, or add/remove one term). Goal spec for context: ${JSON.stringify(spec)}` },
+          { role: "user" as const, content: `Current genome: ${JSON.stringify(g.value.queries)}\nMutate exactly ONE query term (change its source, refine its terms, or add/remove one term). Goal spec for context: ${JSON.stringify(spec)}\nReply ONLY with a JSON OBJECT shaped exactly like {"queries":[{"source":"newsapi","terms":["..."],"weight":1}, ...]}. ${shapeRule}` },
         ],
         schema: genomeBodySchema,
       });

@@ -142,4 +142,70 @@ describe("llm-gateway", () => {
     expect(outs).toHaveLength(6);
     expect(maxInFlight).toBeLessThanOrEqual(2);
   });
+
+  it("embed returns the vector from a recorded response", async () => {
+    const fetchFn = async () => new Response(
+      JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
+      { status: 200 }
+    );
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const v = await gw.embed("hello", "test-model");
+    expect(v).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it("embed serves the second identical call from cache (no second fetch)", async () => {
+    let calls = 0;
+    const fetchFn = async () => {
+      calls++;
+      return new Response(JSON.stringify({ data: [{ embedding: [1, 2, 3] }] }), { status: 200 });
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    await gw.embed("hi", "m");
+    await gw.embed("hi", "m");
+    expect(calls).toBe(1);
+  });
+
+  it("embed throws an attributable error when data[0].embedding is missing", async () => {
+    const fetchFn = async () => new Response(JSON.stringify({ data: [{}] }), { status: 200 });
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    await expect(gw.embed("hi", "m")).rejects.toThrow(/no embedding/);
+  });
+
+  it("embed throws on non-ok HTTP status", async () => {
+    const fetchFn = async () => new Response("nope", { status: 429 });
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    await expect(gw.embed("hi", "m")).rejects.toThrow(/embeddings 429/);
+  });
+
+  it("embedBatch resolves all requests and respects maxConcurrency", async () => {
+    let inFlight = 0, maxInFlight = 0;
+    const fetchFn = async () => {
+      inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return new Response(JSON.stringify({ data: [{ embedding: [0] }] }), { status: 200 });
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn, maxConcurrency: 2 });
+    const out = await gw.embedBatch(["a", "b", "c", "d"], "m");
+    expect(out).toHaveLength(4);
+    expect(maxInFlight).toBeLessThanOrEqual(2);
+  });
+
+  it("embed and chat completions use distinct cache keys", async () => {
+    let chatCalls = 0, embedCalls = 0;
+    const fetchFn = async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.includes("/embeddings")) {
+        embedCalls++;
+        return new Response(JSON.stringify({ data: [{ embedding: [0.5] }] }), { status: 200 });
+      }
+      chatCalls++;
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: "x" }) } }] }), { status: 200 });
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    await gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema });
+    await gw.embed("q", "m");
+    expect(chatCalls).toBe(1);
+    expect(embedCalls).toBe(1);
+  });
 });

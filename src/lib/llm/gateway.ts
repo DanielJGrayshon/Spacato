@@ -13,6 +13,7 @@ export interface GatewayDeps {
   cache: CachePort;
   fetchFn?: typeof fetch;
   endpoint?: string;
+  embeddingEndpoint?: string;
   maxConcurrency?: number;
 }
 
@@ -35,6 +36,7 @@ function stripJsonFence(s: string): string {
 export function makeGateway(deps: GatewayDeps) {
   const fetchFn = deps.fetchFn ?? fetch;
   const endpoint = deps.endpoint ?? "https://openrouter.ai/api/v1/chat/completions";
+  const embeddingEndpoint = deps.embeddingEndpoint ?? "https://openrouter.ai/api/v1/embeddings";
   const maxConcurrency = deps.maxConcurrency ?? 4;
 
   async function complete<T>(req: LlmRequest<T>): Promise<T> {
@@ -82,5 +84,38 @@ export function makeGateway(deps: GatewayDeps) {
     return results;
   }
 
-  return { complete, batchComplete };
+  async function embed(text: string, model: string): Promise<number[]> {
+    const hash = promptHash(model, [], `embed:${text}`);
+    const cached = deps.cache.get(hash, model);
+    if (cached !== undefined) return cached as number[];
+
+    const res = await fetchFn(embeddingEndpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${deps.apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input: text }),
+    });
+    if (!res.ok) throw new Error(`OpenRouter embeddings ${res.status}`);
+    const json = (await res.json()) as { data?: Array<{ embedding?: number[] }> };
+    const vec = json.data?.[0]?.embedding;
+    if (!Array.isArray(vec)) {
+      throw new Error(`OpenRouter: no embedding in response for model "${model}"`);
+    }
+    deps.cache.put(hash, model, vec);
+    return vec;
+  }
+
+  async function embedBatch(texts: string[], model: string): Promise<number[][]> {
+    const results: number[][] = new Array(texts.length);
+    let next = 0;
+    async function worker(): Promise<void> {
+      for (let i = next++; i < texts.length; i = next++) {
+        results[i] = await embed(texts[i], model);
+      }
+    }
+    const workerCount = Math.min(maxConcurrency, texts.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
+  }
+
+  return { complete, batchComplete, embed, embedBatch };
 }

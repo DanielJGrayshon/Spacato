@@ -17,6 +17,7 @@ export interface ElicitResult {
 export interface ElicitDeps {
   repos: ReturnType<typeof makeRepositories>;
   ops: ElicitationOps;
+  embed: (text: string) => Promise<number[]>;
 }
 
 function toState(row: ElicitationState): OrchestratorState {
@@ -27,6 +28,7 @@ function toState(row: ElicitationState): OrchestratorState {
     pendingQuestion: row.pendingQuestion,
     status: row.status,
     convergedSpec: null,
+    vectors: row.vectors,
   };
 }
 
@@ -37,21 +39,21 @@ function persist(deps: ElicitDeps, id: number, s: OrchestratorState): void {
     beliefWeights: s.belief.weights,
     pendingQuestion: s.pendingQuestion,
     status: s.status,
+    vectors: s.vectors,
   });
 }
 
 export async function handleElicit(input: ElicitInput, deps: ElicitDeps): Promise<ElicitResult> {
   if (input.action === "start") {
     const e = deps.repos.elicitations.create(input.goalId);
-    const state = await startElicitation(deps.ops, CFG);
+    const state = await startElicitation(deps.ops, CFG, deps.embed);
     persist(deps, e.id, state);
     return { elicitationId: e.id, question: state.pendingQuestion, converged: state.status === "converged" };
   }
 
-  // action === "answer"
   const row = deps.repos.elicitations.get(input.elicitationId);
   if (!row) throw new Error(`elicit: no elicitation ${input.elicitationId}`);
-  const next = await answerQuestion(deps.ops, toState(row), input.answer, CFG);
+  const next = await answerQuestion(deps.ops, toState(row), input.answer, CFG, deps.embed);
   persist(deps, input.elicitationId, next);
   if (next.status === "converged" && next.convergedSpec) {
     deps.repos.goals.setConvergedSpec(row.goalId, next.convergedSpec);

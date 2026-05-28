@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
   const gw = makeGateway({ apiKey: process.env.OPENROUTER_API_KEY ?? "", cache: repos.llmCache });
   const rawGoal = input.action === "start" ? input.rawGoal : "";
   const ops = makeOperators(gw, rawGoal, 4, MODEL);
-  const result = await handleElicit(input, { repos, ops });
+  const embed = (text: string) => gw.embed(text, "openai/text-embedding-3-small");
+  const result = await handleElicit(input, { repos, ops, embed });
   return NextResponse.json(result);
 }

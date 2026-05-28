@@ -1,8 +1,9 @@
 import type { Genome } from "@/lib/esc/core";
 import { evolve } from "@/lib/esc/core";
 import type { GoalInterpretation, ElicitationQuestion } from "@/lib/store/types";
-import { uniformBelief, updateBelief, entropy, type Belief } from "./belief";
+import { uniformBelief, updateBelief, entropy, makeDistanceFn, type Belief } from "./belief";
 import { selectQuestion } from "./acquisition";
+import { contentHash } from "@/lib/util/hash";
 
 export interface ElicitationOps {
   seed(): Promise<Genome<GoalInterpretation>[]>;
@@ -19,6 +20,7 @@ export interface OrchestratorState {
   pendingQuestion: ElicitationQuestion | null;
   status: "active" | "converged";
   convergedSpec: GoalInterpretation | null;
+  vectors: Record<string, number[]>;
 }
 
 function mapCandidate(state: OrchestratorState): GoalInterpretation {
@@ -29,18 +31,49 @@ function mapCandidate(state: OrchestratorState): GoalInterpretation {
   return state.population[best].value;
 }
 
+// Compute and attach an embedding vector for every genome we don't already have
+// a vector for, keyed by contentHash of the GoalInterpretation. A failed embed
+// is logged and skipped — makeDistanceFn falls back to Jaccard for any pair
+// whose key is missing, so a degraded model run still produces a usable distance.
+async function annotate(
+  genomes: Genome<GoalInterpretation>[],
+  vectors: Record<string, number[]>,
+  embed: (text: string) => Promise<number[]>,
+): Promise<Record<string, number[]>> {
+  const next: Record<string, number[]> = { ...vectors };
+  for (const g of genomes) {
+    const key = contentHash(g.value);
+    if (next[key]) continue;
+    try {
+      next[key] = await embed(JSON.stringify(g.value));
+    } catch (err) {
+      console.warn(`s0: embed failed for ${key}; falling back to Jaccard for any pair using this genome:`, String(err));
+    }
+  }
+  return next;
+}
+
 function finaliseIfDone(state: OrchestratorState, cfg: ElicitationConfig): OrchestratorState {
   const done = entropy(state.belief) < cfg.entropyThreshold || state.generation >= cfg.maxQuestions;
   if (!done) {
-    return { ...state, pendingQuestion: selectQuestion(state.belief, state.population), status: "active" };
+    const distance = makeDistanceFn(state.vectors);
+    return { ...state, pendingQuestion: selectQuestion(state.belief, state.population, distance), status: "active" };
   }
   return { ...state, pendingQuestion: null, status: "converged", convergedSpec: mapCandidate(state) };
 }
 
-export async function startElicitation(ops: ElicitationOps, cfg: ElicitationConfig): Promise<OrchestratorState> {
+export async function startElicitation(
+  ops: ElicitationOps,
+  cfg: ElicitationConfig,
+  embed: (text: string) => Promise<number[]>,
+): Promise<OrchestratorState> {
   const population = await ops.seed();
+  const vectors = await annotate(population, {}, embed);
   const belief = uniformBelief(population.length);
-  const base: OrchestratorState = { population, belief, generation: 0, pendingQuestion: null, status: "active", convergedSpec: null };
+  const base: OrchestratorState = {
+    population, belief, generation: 0,
+    pendingQuestion: null, status: "active", convergedSpec: null, vectors,
+  };
   return finaliseIfDone(base, cfg);
 }
 
@@ -49,9 +82,11 @@ export async function answerQuestion(
   state: OrchestratorState,
   answer: "a" | "b",
   cfg: ElicitationConfig,
+  embed: (text: string) => Promise<number[]>,
 ): Promise<OrchestratorState> {
   if (!state.pendingQuestion) return state;
-  const belief = updateBelief(state.belief, state.population, state.pendingQuestion, answer);
+  const distance = makeDistanceFn(state.vectors);
+  const belief = updateBelief(state.belief, state.population, state.pendingQuestion, answer, distance);
   let next: OrchestratorState = { ...state, belief, generation: state.generation + 1 };
 
   if (next.generation % cfg.evolveEvery === 0) {
@@ -72,10 +107,13 @@ export async function answerQuestion(
       .sort((x, y) => y.w - x.w)
       .slice(0, n);
     const sum = ranked.reduce((s, r) => s + r.w, 0);
+    const newPopulation = ranked.map((r) => evolved[r.idx]);
+    const vectorsAfter = await annotate(newPopulation, next.vectors, embed);
     next = {
       ...next,
-      population: ranked.map((r) => evolved[r.idx]),
+      population: newPopulation,
       belief: { weights: ranked.map((r) => r.w / sum) },
+      vectors: vectorsAfter,
     };
   }
   return finaliseIfDone(next, cfg);

@@ -26,4 +26,5 @@ export interface ElicitationState {
   beliefWeights: number[];
   pendingQuestion: ElicitationQuestion | null;
   status: "active" | "converged";
+  vectors: Record<string, number[]>;
 }

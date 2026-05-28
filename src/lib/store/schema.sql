@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS elicitation_state (
   population_json TEXT NOT NULL DEFAULT '[]',
   belief_json TEXT NOT NULL DEFAULT '{}',
   pending_question_json TEXT,
-  status TEXT NOT NULL DEFAULT 'active'
+  status TEXT NOT NULL DEFAULT 'active',
+  vectors_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS external_signal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -29,6 +29,7 @@ function getElicitation(db: Db, id: number): ElicitationState | undefined {
     beliefWeights: JSON.parse(row.belief_json),
     pendingQuestion: row.pending_question_json ? JSON.parse(row.pending_question_json) : null,
     status: row.status,
+    vectors: row.vectors_json ? JSON.parse(row.vectors_json) : {},
   };
 }
 
@@ -119,16 +120,18 @@ export function makeRepositories(db: Db) {
         beliefWeights: number[];
         pendingQuestion: ElicitationQuestion | null;
         status: "active" | "converged";
+        vectors: Record<string, number[]>;
       }): void {
         const info = db.prepare(
           `UPDATE elicitation_state SET generation = ?, population_json = ?, belief_json = ?,
-             pending_question_json = ?, status = ? WHERE id = ?`
+             pending_question_json = ?, status = ?, vectors_json = ? WHERE id = ?`
         ).run(
           patch.generation,
           JSON.stringify(patch.population),
           JSON.stringify(patch.beliefWeights),
           patch.pendingQuestion ? JSON.stringify(patch.pendingQuestion) : null,
           patch.status,
+          JSON.stringify(patch.vectors),
           id,
         );
         if (info.changes === 0) throw new Error(`elicitations.update: no row with id ${id}`);

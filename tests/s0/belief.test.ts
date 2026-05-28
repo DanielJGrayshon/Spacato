@@ -94,11 +94,11 @@ describe("makeDistanceFn", () => {
     // If the lookup were reference-based or insertion-order-sensitive, this would Jaccard-fallback instead of cosine.
     expect(d(reordered, other)).toBeCloseTo(0.5);
   });
-  it("TAU=0.2: sigma on a fractional distance pair is locked to its expected value", () => {
-    // distance(target, A) = 0.3, distance(target, B) = 0.6 → sigma should be exp(-0.3/0.2)/(exp(-0.3/0.2)+exp(-0.6/0.2)) ≈ 0.8175745.
+  it("TAU=0.05: sigma on a fractional distance pair is locked to its expected value", () => {
+    // distance(target, A) = 0.3, distance(target, B) = 0.6 → sigma = exp(-0.3/0.05)/(exp(-0.3/0.05)+exp(-0.6/0.05)) ≈ 0.99753.
     const synth: DistanceFn = (_a, b) => (b.scope === "near" ? 0.3 : 0.6);
     const pop = [gi("target"), gi("near"), gi("far")].map((value) => ({ value }));
-    expect(sigma(pop, 0, 1, 2, synth)).toBeCloseTo(0.8175745, 5);
+    expect(sigma(pop, 0, 1, 2, synth)).toBeCloseTo(0.99753, 5);
   });
 });
 

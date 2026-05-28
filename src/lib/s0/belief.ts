@@ -7,7 +7,7 @@ export interface Belief { weights: number[]; }
 export type DistanceFn = (a: GoalInterpretation, b: GoalInterpretation) => number;
 
 const DIMS: (keyof GoalInterpretation)[] = ["scope", "successMetric", "constraints", "motivation", "deadlineShape"];
-export const TAU = 0.2;
+export const TAU = 0.05;
 
 export function cosineDistance(u: number[], v: number[]): number {
   if (u.length !== v.length) throw new Error("s0: cosine on mismatched vector dims");

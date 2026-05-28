@@ -86,4 +86,22 @@ describe("esc-core", () => {
     expect(maxConcurrent).toBe(2);           // both crossovers in flight at once
     expect(next.length).toBe(4);             // [...parents, ...offspring] unchanged
   });
+
+  it("runs all mutates concurrently after the crossover phase", async () => {
+    let active = 0;
+    let maxConcurrent = 0;
+    const cfg = mockConfig({
+      async mutate(g) {
+        active++;
+        maxConcurrent = Math.max(maxConcurrent, active);
+        await new Promise((r) => setTimeout(r, 5));
+        active--;
+        return { value: g.value + 1 };
+      },
+    });
+    const parents = [{ value: 1 }, { value: 2 }]; // 2 parents => 2 offspring => 2 mutates
+    const next = await evolve(cfg, parents);
+    expect(maxConcurrent).toBe(2); // both mutates in flight at once
+    expect(next.length).toBe(4);
+  });
 });

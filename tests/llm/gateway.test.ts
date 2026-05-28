@@ -46,6 +46,45 @@ describe("llm-gateway", () => {
     expect(out).toEqual({ answer: "hi" });
   });
 
+  it("strips a fence with an arbitrary language tag (e.g. ```javascript)", async () => {
+    const fenced = '```javascript\n{"answer":"hi"}\n```';
+    const fetchFn = async () => new Response(
+      JSON.stringify({ choices: [{ message: { content: fenced } }] }),
+      { status: 200 }
+    );
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const out = await gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema });
+    expect(out).toEqual({ answer: "hi" });
+  });
+
+  it("requests JSON mode (response_format json_object) in the OpenRouter request body", async () => {
+    let capturedBody: string | undefined;
+    const fetchFn: typeof fetch = async (_url, init) => {
+      capturedBody = init?.body as string;
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"answer":"hi"}' } }] }),
+        { status: 200 }
+      );
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    await gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema });
+    expect(capturedBody).toBeDefined();
+    const body = JSON.parse(capturedBody!) as { response_format?: unknown };
+    expect(body.response_format).toEqual({ type: "json_object" });
+  });
+
+  it("wraps a non-JSON OpenRouter response body in an attributable error", async () => {
+    const html = "<!DOCTYPE html><html><body>Bad gateway</body></html>";
+    const fetchFn = async () => new Response(html, {
+      status: 200,
+      headers: { "Content-Type": "text/html" },
+    });
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    await expect(
+      gw.complete({ model: "m", messages: [{ role: "user", content: "q" }], schema })
+    ).rejects.toThrow(/non-JSON response body/);
+  });
+
   it("serves the second identical call from cache (no second fetch)", async () => {
     let calls = 0;
     const fetchFn = async () => { calls++; return recordedFetch({ answer: "cached" })(); };

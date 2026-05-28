@@ -22,12 +22,12 @@ function schemaFingerprint<T>(schema: ZodType<T>): string {
   return JSON.stringify(zodToJsonSchema(schema));
 }
 
-/** Some models (e.g. OpenAI gpt-4o-mini via OpenRouter) wrap structured output in a
- *  markdown code fence even when asked for JSON only. Strip an opening ```json / ```
- *  and a closing ``` defensively before JSON.parse. */
+/** Some models wrap structured output in a markdown code fence even when asked for
+ *  JSON only. Strip an opening ``` with any (or no) language tag and a closing ```
+ *  defensively before JSON.parse. */
 function stripJsonFence(s: string): string {
   let out = s.trim();
-  out = out.replace(/^```(?:json)?\s*\n?/i, "");
+  out = out.replace(/^```[^\n]*\n?/i, "");
   out = out.replace(/\n?\s*```\s*$/i, "");
   return out.trim();
 }
@@ -45,10 +45,21 @@ export function makeGateway(deps: GatewayDeps) {
     const res = await fetchFn(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${deps.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: req.model, messages: req.messages }),
+      body: JSON.stringify({
+        model: req.model,
+        messages: req.messages,
+        response_format: { type: "json_object" },
+      }),
     });
     if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
-    const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const raw = await res.text();
+    let json: { choices?: Array<{ message?: { content?: string } }> };
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      const snippet = raw.slice(0, 120).replace(/\s+/g, " ");
+      throw new Error(`OpenRouter: non-JSON response body (status=${res.status}, snippet=${JSON.stringify(snippet)})`);
+    }
     const content = json.choices?.[0]?.message?.content;
     if (typeof content !== "string") {
       throw new Error(`OpenRouter: no text content in response for model "${req.model}" (content was ${String(content)})`);

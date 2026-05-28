@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { openDb } from "@/lib/store/db";
 import { makeRepositories } from "@/lib/store/repositories";
-import { runCycle } from "@/app/api/signals/route";
+import { runCycle } from "@/lib/p5/esc-adapter";
 import { raiseAlerts } from "@/lib/p5/alert-logic";
 import type { Genome } from "@/lib/esc/core";
 import type { QueryGenome, FeedItem, ScoredItem } from "@/lib/p5/types";

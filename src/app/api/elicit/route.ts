@@ -5,8 +5,6 @@ import { makeGateway } from "@/lib/llm/gateway";
 import { makeOperators } from "@/lib/s0/operators";
 import { handleElicit, type ElicitInput } from "@/lib/s0/elicit-handler";
 
-export { handleElicit } from "@/lib/s0/elicit-handler";
-
 const MODEL = "openai/gpt-4o-mini";
 
 export async function POST(req: NextRequest) {

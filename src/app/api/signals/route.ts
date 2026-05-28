@@ -9,8 +9,6 @@ import { scoreItems } from "@/lib/p5/relevance";
 import { raiseAlerts } from "@/lib/p5/alert-logic";
 import type { GoalInterpretation } from "@/lib/store/types";
 
-export { runCycle } from "@/lib/p5/esc-adapter";
-
 const SEED_MODEL = process.env.P5_GENOME_MODEL ?? "openai/gpt-4o-mini";
 const JUDGE_MODEL = process.env.P5_JUDGE_MODEL ?? "openai/gpt-4o-mini";
 

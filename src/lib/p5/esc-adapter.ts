@@ -32,7 +32,15 @@ export interface CycleDeps {
 }
 
 const argmax = (xs: number[]): number => xs.reduce((best, x, i) => (x > xs[best] ? i : best), 0);
-const mean = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+/** Relevance component of fitness: mean of finalScore weighted by each item's originating
+ *  query-term weight (spec §5.1 — weight is "used by fitness"). selectTop then ranks on this
+ *  fitness, so weight feeds selection transitively (§5.7). Missing weight defaults to 1. */
+const weightedRelevance = (items: ScoredItem[]): number => {
+  const wsum = items.reduce((a, si) => a + (si.item.queryWeight ?? 1), 0);
+  if (wsum === 0) return 0;
+  return items.reduce((a, si) => a + si.finalScore * (si.item.queryWeight ?? 1), 0) / wsum;
+};
 
 /** One ingest cycle (spec §5.9). Uses score/select/evolve directly, NOT step():
  *  step() evaluates fitness on the post-evolution offspring and trims by score, which would
@@ -80,7 +88,7 @@ export async function runCycle(goalId: number, deps: CycleDeps): Promise<{ signa
   const alerts = await raiseAlerts(signals);
 
   // 4. SCORE the CURRENT population (carry-forward for non-fetchers; no step())
-  const fetchingFitness = mean(scoredItems.map((si) => si.finalScore)) * fetchingEngagement;
+  const fetchingFitness = weightedRelevance(scoredItems) * fetchingEngagement;
   const cfg: EscConfig<QueryGenome> = {
     maxGenerations: Number.MAX_SAFE_INTEGER,
     populationSize: POPULATION_SIZE,

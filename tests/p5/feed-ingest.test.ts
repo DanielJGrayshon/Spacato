@@ -44,4 +44,11 @@ describe("feed-ingest", () => {
     expect(opts.redirect).toBe("error");
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
+
+  it("stamps each item with the originating query term's weight", async () => {
+    const body = { status: "ok", articles: [{ title: "T", description: "D", url: "https://newsapi.org/a", publishedAt: "2026-05-20T00:00:00Z" }] };
+    const items = await ingest([{ source: "newsapi", terms: ["solar"], weight: 3 }], { fetchFn: okResponse(body), env });
+    expect(items).toHaveLength(1);
+    expect(items[0].queryWeight).toBe(3);
+  });
 });

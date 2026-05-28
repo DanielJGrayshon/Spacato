@@ -70,7 +70,7 @@ describe("runCycle online loop", () => {
 
     const state = repos.queryGenomeState.get(goalId)!;
     expect(state.generation).toBe(4);
-    // Fitnesses: fetcher b = mean(0.9,0.9)*engagement(0.5) = 0.45; others carry forward
+    // Fitnesses: fetcher b = weightedRelevance(0.9,0.9 @ w=1)*engagement(0.5) = 0.45; others carry forward
     // [a:0.2, c:0.5, d:0.1]. selectTop keeps the top 2 => [c:0.5, b:0.45].
     expect(state.population.slice(0, 2).map((p) => p.value.id)).toEqual(["c", "b"]);
     expect(state.scores[0]).toBeCloseTo(0.5, 5);   // non-fetcher "c" kept its specific prior
@@ -84,5 +84,17 @@ describe("runCycle online loop", () => {
     const state = repos.queryGenomeState.get(goalId)!;
     expect(state.scores.every((s) => Number.isFinite(s))).toBe(true);
     expect(res.signals.length).toBeGreaterThan(0);
+  });
+
+  it("fitness weights item relevance by the originating query term weight", async () => {
+    const scoredWeighted = (): ScoredItem[] => [
+      { item: { ...feed("hi"), queryWeight: 3 }, keywordScore: 0, llmScore: 1, finalScore: 1.0 },
+      { item: { ...feed("lo"), queryWeight: 1 }, keywordScore: 0, llmScore: 0, finalScore: 0.0 },
+    ];
+    await runCycle(goalId, deps({ scoreItems: async () => scoredWeighted() }));
+    const state = repos.queryGenomeState.get(goalId)!;
+    // weighted relevance = (1.0*3 + 0.0*1)/(3+1) = 0.75; engagement prior 0.5 => fitness 0.375.
+    // Plain mean would give 0.5 => 0.25, so this asserts weighting happened.
+    expect(Math.max(...state.scores)).toBeCloseTo(0.375, 5);
   });
 });

@@ -63,5 +63,5 @@ async function ingestOne(q: QueryTerm, deps: IngestDeps): Promise<FeedItem[]> {
     console.warn(`feed-ingest: "${q.source}" response failed schema validation`);
     return [];
   }
-  return source.normalise(parsed.data);
+  return source.normalise(parsed.data).map((it) => ({ ...it, queryWeight: q.weight }));
 }

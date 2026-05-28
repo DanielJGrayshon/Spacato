@@ -12,6 +12,7 @@ export interface FeedItem {
   publishedAt: string;   // ISO datetime
   url?: string;
   rawPayload: unknown;
+  queryWeight?: number;  // relative priority of the genome query term that fetched this item (set by feed-ingest); undefined → treated as 1
 }
 
 export type FeedItemPayload = FeedItem;   // the normalised FeedItem is what we persist

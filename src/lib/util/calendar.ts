@@ -5,15 +5,16 @@ export interface MonthSpan {
 }
 
 export interface WeekSpan {
-  weekIndex: number;
+  weekIndex: number;  // per-month-local: restarts at 0 for each month
   startDate: string;
   endDate: string;
+  dates: string[];    // ISO yyyy-mm-dd, every day in the week (inclusive)
 }
 
 export interface CalendarSkeleton {
   months: MonthSpan[];
   weeksByMonth: WeekSpan[][];
-  daysByWeek: string[][];  // flattened in (month, week) traversal order
+  // daysByWeek removed — derive via skel.weeksByMonth.flatMap(ws => ws.flatMap(w => w.dates))
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -30,7 +31,12 @@ function addDays(iso: string, days: number): string {
 
 function addMonths(iso: string, months: number): string {
   const d = new Date(iso + "T00:00:00Z");
-  d.setUTCMonth(d.getUTCMonth() + months);
+  const targetMonth = d.getUTCMonth() + months;
+  const day = d.getUTCDate();
+  d.setUTCDate(1);                      // park on day 1 to avoid overflow
+  d.setUTCMonth(targetMonth);
+  const daysInTarget = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, daysInTarget));
   return isoDate(d);
 }
 
@@ -67,7 +73,7 @@ function parseTimeframe(input: string, today: string): ParsedTimeframe {
   const byDate = /^by\s+(\d{4}-\d{2}-\d{2})$/i.exec(trimmed);
   if (byDate) {
     const end = byDate[1];
-    if (end <= today) throw new Error(`p2.calendar: by-date in the past: ${end}`);
+    if (end < today) throw new Error(`p2.calendar: by-date in the past: ${end}`);
     // count how many calendar months fit before end is reached
     let n = 0;
     while (addDays(addMonths(today, n + 1), -1) < end) n++;
@@ -87,30 +93,29 @@ export function buildSkeleton(timeframe: string, today: string): CalendarSkeleto
     // Non-last spans also clamp down if the computed endOfSpan overshoots end.
     const isLast = i === numMonths - 1;
     let endOfSpan = addDays(addMonths(today, i + 1), -1);
+    // end = addMonths(today, n) is inclusive; addDays(..., -1) above lands one day short on the final span, so clamp explicitly.
     if (isLast || endOfSpan > end) endOfSpan = end;
     months.push({ monthIndex: i, startDate: start, endDate: endOfSpan });
   }
 
   const weeksByMonth: WeekSpan[][] = [];
-  const daysByWeek: string[][] = [];
-  let globalWeekIndex = 0;
   for (const m of months) {
     const weeks: WeekSpan[] = [];
     let cursor = m.startDate;
+    let localWeekIndex = 0;
     while (cursor <= m.endDate) {
       let weekEnd = addDays(cursor, 6);
       if (weekEnd > m.endDate) weekEnd = m.endDate;
-      weeks.push({ weekIndex: globalWeekIndex++, startDate: cursor, endDate: weekEnd });
 
       const dates: string[] = [];
       const dayCount = daysBetweenInclusive(cursor, weekEnd);
       for (let d = 0; d < dayCount; d++) dates.push(addDays(cursor, d));
-      daysByWeek.push(dates);
 
+      weeks.push({ weekIndex: localWeekIndex++, startDate: cursor, endDate: weekEnd, dates });
       cursor = addDays(weekEnd, 1);
     }
     weeksByMonth.push(weeks);
   }
 
-  return { months, weeksByMonth, daysByWeek };
+  return { months, weeksByMonth };
 }

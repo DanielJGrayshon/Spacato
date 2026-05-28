@@ -34,14 +34,11 @@ The OpenRouter key lives only server-side (a Next API route); it never enters th
 
 **Repo:** github.com/DanielJGrayshon/Spacato. **Branches:**
 - `main` — Phase A foundation + S0 elicitation + **P5 news/signals (spec-fidelity-fixed)** +
-  **`next build` route-export fix + Next tsconfig adoption + R1 gateway hardening + TS2352 test fix**
-  (the latter four landed via fast-forward of the now-merged `fix/next-build-route-exports` on 2026-05-28).
-  **81 tests green, `npm run typecheck` clean.** Local only; not yet pushed.
-- `fix/next-build-route-exports` — merged into `main` (fast-forward). Delete with
-  `git branch -d fix/next-build-route-exports` when ready.
-- `backup/cull-2026-05-28` — local-only safety ref pointing at the pre-cull tip of the merged branch.
-  Delete (`git branch -D backup/cull-2026-05-28`) once confident no rollback is needed.
-- `phase-a-foundation` — old origin-tracked branch from Phase A; can be deleted once `main` is pushed.
+  **`next build` route-export fix + Next tsconfig adoption + R1 gateway hardening + TS2352 test fix +
+  gitignore sweep for sqlite WAL/SHM sidecars + `.coverage`**. **81 tests green, `npm run typecheck`
+  clean.** Pushed to `origin/main` on 2026-05-28 (tip `e7509d1`); local and remote are in sync.
+- All cleanup branches (`fix/next-build-route-exports`, `backup/cull-2026-05-28`,
+  `phase-a-foundation`) deleted locally and on origin during the 2026-05-28 push. Only `main` remains.
 
 **Built (on `main`):**
 - **Foundation:** `src/lib/store` (SQLite), `src/lib/llm` (OpenRouter gateway), `src/lib/esc` (evolutionary core).
@@ -129,25 +126,23 @@ fitness = `weightedRelevance × engagementFactor`; offspring slots initialised t
 
 Highest leverage, in order:
 
-1. **Untracked-files hygiene** (5 min). Delete the empty `MathsCloner` file at repo root. Add
-   `*.sqlite-shm`, `*.sqlite-wal`, `.coverage` to `.gitignore` (sibling to the existing `*.sqlite`).
-   `next-env.d.ts` and `*.tsbuildinfo` were already gitignored as part of the 2026-05-28 merge.
-
-2. **`/api/alerts/acknowledge` route + a call site.** P5's engagement factor is structurally pinned near
+1. **`/api/alerts/acknowledge` route + a call site.** P5's engagement factor is structurally pinned near
    the Laplace prior (0.5) for every genome because nothing in the codebase can set `alert.acknowledged = 1`.
    The repo method exists (`alerts.acknowledge(id)`) — it needs a route and any caller. Until this lands,
    P5's selection is relevance-only and the second half of fitness is inert. Cheap.
 
-3. **Deferred minors** — one tidy commit: `queryTermSchema.weight` → `.positive()` in `genome.ts`; consider
+2. **Deferred minors** — one tidy commit: `queryTermSchema.weight` → `.positive()` in `genome.ts`; consider
    pulling `queryWeight` out of `FeedItemPayload` (it's persisting genome-lineage metadata into source-item
    payload, currently harmless because nothing reads it back). See §8 minor list.
 
-4. **Actually run the app.** Now that `next build` is no longer structurally broken (route re-exports
+3. **Actually run the app.** Now that `next build` is no longer structurally broken (route re-exports
    removed, tsconfig Next-aligned), the next obvious smoke test is `npm run build` then `npm run dev`
    with a real `OPENROUTER_API_KEY` in `.env.local`. See §9 risk 1.
 
-5. **Then the product gaps:** **P6 (a UI)** so a human can use any of this, and **P2/P3** (the
+4. **Then the product gaps:** **P6 (a UI)** so a human can use any of this, and **P2/P3** (the
    decomposition + sliding-window that are the product's core promise).
+
+*(Untracked-files hygiene + remote-branch cleanup + push to origin were actioned 2026-05-28, commit `e7509d1`.)*
 
 ---
 
@@ -185,6 +180,12 @@ adoption; `489494e` markdown JSON fence stripping; `0705d53` JSON-mode hint + ma
 widened fence regex (closes all three R1 gateway items); `c0661d0` `as unknown as NodeJS.ProcessEnv`
 double-cast in `feed-ingest.test.ts` to silence TS2352 (current `@types/node` declares `NODE_ENV` as
 required, so the single-cast shorthand fails typecheck — main was broken on this before the merge).
+
+**Hygiene sweep (2026-05-28):** `e7509d1` `.gitignore` gained `*.sqlite-shm`, `*.sqlite-wal`, `.coverage`
+so the local SQLite WAL sidecars and coverage artefacts stop showing as untracked; the orphan empty
+`MathsCloner` file at repo root was deleted; cleanup branches (`fix/next-build-route-exports`,
+`backup/cull-2026-05-28`, `phase-a-foundation`) deleted locally and on origin; `main` pushed to origin
+(tip `e7509d1`).
 
 **Minor (reviewer-flagged, deliberately deferred during P5 spec-fidelity merge):**
 - `src/lib/p5/genome.ts` — `queryTermSchema.weight: z.number()` permits zero/negative; tighten to `.positive()`.

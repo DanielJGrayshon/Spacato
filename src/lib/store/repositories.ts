@@ -21,6 +21,11 @@ function getGoal(db: Db, id: number): Goal | undefined {
 function getElicitation(db: Db, id: number): ElicitationState | undefined {
   const row = db.prepare("SELECT * FROM elicitation_state WHERE id = ?").get(id) as any;
   if (!row) return undefined;
+  let vectors: Record<string, number[]> = {};
+  if (row.vectors_json) {
+    try { vectors = JSON.parse(row.vectors_json); }
+    catch (err) { console.warn(`elicitations.get: vectors_json corrupt for id ${row.id}; re-embedding next cycle`, String(err)); }
+  }
   return {
     id: row.id,
     goalId: row.goal_id,
@@ -29,7 +34,7 @@ function getElicitation(db: Db, id: number): ElicitationState | undefined {
     beliefWeights: JSON.parse(row.belief_json),
     pendingQuestion: row.pending_question_json ? JSON.parse(row.pending_question_json) : null,
     status: row.status,
-    vectors: row.vectors_json ? JSON.parse(row.vectors_json) : {},
+    vectors,
   };
 }
 

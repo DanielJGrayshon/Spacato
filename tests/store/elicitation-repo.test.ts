@@ -4,7 +4,8 @@ import { makeRepositories } from "@/lib/store/repositories";
 
 describe("elicitation repository", () => {
   let repos: ReturnType<typeof makeRepositories>;
-  beforeEach(() => { repos = makeRepositories(openDb(":memory:")); });
+  let rawDb: ReturnType<typeof openDb>;
+  beforeEach(() => { rawDb = openDb(":memory:"); repos = makeRepositories(rawDb); });
 
   it("creates, reads, and updates elicitation state for a goal", () => {
     const g = repos.goals.create({ title: "x", rawText: "x" });
@@ -46,5 +47,22 @@ describe("elicitation repository", () => {
       "abc123def4567890": [0.1, 0.2, 0.3],
       "f0e9d8c7b6a59483": [0.4],
     });
+  });
+
+  it("elicitations.get returns empty vectors and logs a warning when vectors_json is corrupt (spec §8)", () => {
+    const g = repos.goals.create({ title: "x", rawText: "x" });
+    const e = repos.elicitations.create(g.id);
+    // Inject malformed JSON directly via the raw DB handle (bypasses the typed update).
+    rawDb.prepare("UPDATE elicitation_state SET vectors_json = ? WHERE id = ?").run("{not-json", e.id);
+    const warn = console.warn;
+    let warned = false;
+    console.warn = () => { warned = true; };
+    try {
+      const reloaded = repos.elicitations.get(e.id)!;
+      expect(reloaded.vectors).toEqual({});
+      expect(warned).toBe(true);
+    } finally {
+      console.warn = warn;
+    }
   });
 });

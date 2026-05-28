@@ -198,7 +198,7 @@ CREATE INDEX IF NOT EXISTS idx_daily_weekly       ON daily_task(weekly_id);
 CREATE INDEX IF NOT EXISTS idx_daily_decomp_date  ON daily_task(decomposition_id, date);
 ```
 
-Typical 6-month plan: 1 + 6 + ~28 + 184 ≈ **220 rows** total (1 decomposition, 6 monthlies, ~28 weeklies, 184 daily tasks — one per date in the May-28-to-Nov-28 inclusive span). Trivial in SQLite. P3's "give me all daily tasks in the locked 2-week window for this goal" → `WHERE decomposition_id = ? AND date BETWEEN ? AND ?` → composite-index hit.
+Typical 6-month plan: 1 + 6 + ~28 + 185 ≈ **220 rows** total (1 decomposition, 6 monthlies, ~28 weeklies, 185 daily tasks — one per date in the May-28-to-Nov-28 inclusive span; 4 + 30 + 31 + 31 + 30 + 31 + 28 = 185). Trivial in SQLite. P3's "give me all daily tasks in the locked 2-week window for this goal" → `WHERE decomposition_id = ? AND date BETWEEN ? AND ?` → composite-index hit.
 
 ### 5.2 TypeScript types
 
@@ -298,7 +298,7 @@ Worked example for `buildSkeleton("6 months", "2026-05-28")`:
 - `numMonths = 6`, `end = 2026-11-28`.
 - Spans: `[05-28→06-27, 06-28→07-27, 07-28→08-27, 08-28→09-27, 09-28→10-27, 10-28→11-28]` — 6 spans, each ~30–31 days.
 - Weeks per span: 5 (4 full + 1 clipped). Total ~28–30 weeks (varies slightly with month length).
-- Total dates: 184 (May 28 through Nov 28 inclusive).
+- Total dates: 185 (May 28 through Nov 28 inclusive).
 
 ### 6.2 Length assertion
 
@@ -530,7 +530,7 @@ All deterministic. No live OpenRouter in CI. Manual live run is §10.4.
 
 | Module | Test |
 |---|---|
-| `util/calendar.ts` | `buildSkeleton("6 months", "2026-05-28")` → 6 month-spans, ~28 week-spans (5 weeks per span: 4 full + 1 clipped 2–3 day), 184 dates. Edge: `"by 2026-12-15"` → 6 spans ending on Dec 15. Edge: `"3 weeks"` → 1 month-span clipped to 21 days, 3 weeks (4 if `3 weeks` becomes one 21-day span), 21 dates. Edge: `"0 months"` → throws. Edge: `"invalid"` → throws with attributable message. |
+| `util/calendar.ts` | `buildSkeleton("6 months", "2026-05-28")` → 6 month-spans, ~28 week-spans (5 weeks per span: 4 full + 1 clipped 2–3 day), 185 dates. Edge: `"by 2026-12-15"` → 6 spans ending on Dec 15. Edge: `"3 weeks"` → 1 month-span clipped to 21 days, 3 weeks (4 if `3 weeks` becomes one 21-day span), 21 dates. Edge: `"0 months"` → throws. Edge: `"invalid"` → throws with attributable message. |
 | `p2/types.ts` | `monthlyInitSchema` rejects empty `objective`; `dailyTaskInitSchema` rejects `estimatedMinutes ≤ 0` and `> 480`; `wrapItems` rejects bare-array input (the §9 risk 1 lesson, codified). |
 | `p2/operators.ts` (×3) | Stub gateway returns deterministic `{items:[…]}` of the right length; verify return shape; verify `bypassCache: true` set on the request; verify zod rejects a stub returning wrong-length `items` (the rejection flows through `withRetry`); verify the prompt contains an explicit JSON-object example. |
 | `p2/retry.ts` | Retries 3x on transient then throws wrapped error; doesn't retry on non-transient; honours backoff (mock `setTimeout`); attempt count = 1 when first call succeeds. |
@@ -549,7 +549,7 @@ All deterministic. No live OpenRouter in CI. Manual live run is §10.4.
 
 | Test |
 |---|
-| Stub `ops` returns fixed shape per layer; `today = "2026-05-28"`; assert **~35 LLM calls in 3 waves** (1 monthly + 6 weekly + ~28 daily, exact daily count pinned by the calendar test), tree has 6 monthlies / ~28 weeklies / 184 daily tasks, `goal.activeDecompositionId` updated to the new id. |
+| Stub `ops` returns fixed shape per layer; `today = "2026-05-28"`; assert **~35 LLM calls in 3 waves** (1 monthly + 6 weekly + ~28 daily, exact daily count pinned by the calendar test), tree has 6 monthlies / ~28 weeklies / 185 daily tasks, `goal.activeDecompositionId` updated to the new id. |
 | Stub layer-2 `Promise.all` to reject one subtree after retries; assert handler throws `"weekly→daily for monthly#…"` (or `"monthly→weekly for monthly#…"`); assert decomposition / monthly / weekly / daily_task tables are **all empty** for this goal and the goal's `activeDecompositionId` is unchanged from the prior value (or remains null). |
 | Two consecutive successful `/api/decompose` runs against the same goal → two `decomposition` rows, `goal.activeDecompositionId` ends on the **second**, both trees coexist in the node tables, and (crucially) the two trees' descriptions differ — proving `bypassCache: true` is doing its job at the gateway. |
 | Cache-bypass scope: a parallel S0 elicitation against the same gateway still hits `llm_cache` normally (verified by counting cache puts during the run). |

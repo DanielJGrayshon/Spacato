@@ -71,10 +71,10 @@ Implements §6.1 of the spec: parses `"N months"` / `"N weeks"` / `"by YYYY-MM-D
       });
     });
 
-    it("emits exactly 184 dates for '6 months' from 2026-05-28", () => {
+    it("emits exactly 185 dates for '6 months' from 2026-05-28", () => {
       const skel = buildSkeleton("6 months", "2026-05-28");
       const allDates = skel.daysByWeek.flat();
-      expect(allDates).toHaveLength(184);
+      expect(allDates).toHaveLength(185);
       expect(allDates[0]).toBe("2026-05-28");
       expect(allDates.at(-1)).toBe("2026-11-28");
     });
@@ -1404,7 +1404,7 @@ Depends on **Tasks 1, 3, 4, 5**. Orchestrator owns every side effect: renders th
   }
 
   describe("handleDecompose", () => {
-    it("persists 6 monthlies, ~28 weeklies, 184 daily tasks for 6-month marathon", async () => {
+    it("persists 6 monthlies, ~28 weeklies, 185 daily tasks for 6-month marathon", async () => {
       const goal = makeGoal({
         scope: "marathon training",
         successMetric: "finish the race",
@@ -1429,7 +1429,7 @@ Depends on **Tasks 1, 3, 4, 5**. Orchestrator owns every side effect: renders th
       const dailyCount = allWeeklies.reduce(
         (n, w) => n + repos.dailyTasks.listForWeekly(w.id).length, 0,
       );
-      expect(dailyCount).toBe(184);
+      expect(dailyCount).toBe(185);
 
       const goalAfter = repos.goals.get(goal.id);
       expect(goalAfter?.activeDecompositionId).toBe(result.decompositionId);
@@ -1721,7 +1721,7 @@ Depends on **Tasks 1, 3, 4, 5**. Orchestrator owns every side effect: renders th
   ```
   npx vitest run src/lib/p2/decompose-handler.test.ts
   ```
-  Expected: all 5 tests green. The exact weekly/daily counts depend on `calendar.buildSkeleton` — the tests assert a range for weeklies and pin 184 for dailies, matching the calendar test.
+  Expected: all 5 tests green. The exact weekly/daily counts depend on `calendar.buildSkeleton` — the tests assert a range for weeklies and pin 185 for dailies, matching the calendar test.
 
 - [ ] **Step 6.5 — Commit.**
 

@@ -57,6 +57,18 @@ describe("p5 store repositories", () => {
     expect(repos.alerts.engagementCounts("UNKNOWN")).toEqual({ acked: 0, total: 0 });
   });
 
+  it("signals.listByIds returns only the requested rows, [] for empty input", () => {
+    const repos = makeRepositories(openDb(":memory:"));
+    const goalId = repos.goals.create({ title: "x", rawText: "x" }).id;
+    const mk = (pid: string) => repos.signals.create({
+      goalId, genomeId: "g", source: "newsapi", kind: "news" as const, relevanceScore: 0.1,
+      payload: { id: pid, source: "newsapi", kind: "news", title: pid, summary: "", publishedAt: "2026-05-20T00:00:00Z", rawPayload: {} },
+    });
+    const a = mk("a"); const b = mk("b"); mk("c");
+    expect(repos.signals.listByIds([]).length).toBe(0);
+    expect(repos.signals.listByIds([a.id, b.id]).map((s) => s.payload.id).sort()).toEqual(["a", "b"]);
+  });
+
   it("queryGenomeState round-trips and upserts", () => {
     const g = goal();
     expect(repos.queryGenomeState.get(g)).toBeNull();

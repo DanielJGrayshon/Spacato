@@ -12,14 +12,14 @@ const justifySchema = z.object({ justification: z.string().max(160) });
 type JustificationResult = z.infer<typeof justifySchema>;
 
 /** True if an OPEN alert for this goal already references a signal with the
- *  same source + payload.id (recurring item across cycles). Spec §8.2. */
+ *  same source + payload.id (recurring item across cycles). Spec §8.2.
+ *  Loads only the signals referenced by open alerts (bounded by open-alert count),
+ *  not the goal's entire signal history. */
 function duplicateContentInOpenAlerts(repos: Repositories, signal: StoredSignal): boolean {
   const open = repos.alerts.listOpen(signal.goalId);
   if (open.length === 0) return false;
-  const openSignalIds = new Set(open.map((a) => a.signalId));
-  return repos.signals
-    .listForGoal(signal.goalId)
-    .some((s) => openSignalIds.has(s.id) && s.payload.id === signal.payload.id && s.source === signal.source);
+  const openSignals = repos.signals.listByIds(open.map((a) => a.signalId));
+  return openSignals.some((s) => s.payload.id === signal.payload.id && s.source === signal.source);
 }
 
 export async function raiseAlerts(

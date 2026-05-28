@@ -166,6 +166,12 @@ export function makeRepositories(db: Db) {
             : db.prepare("SELECT * FROM external_signal WHERE goal_id = ? ORDER BY id DESC").all(goalId);
         return (rows as any[]).map(rowToSignal);
       },
+      listByIds(ids: number[]): StoredSignal[] {
+        if (ids.length === 0) return [];
+        const placeholders = ids.map(() => "?").join(",");
+        const rows = db.prepare(`SELECT * FROM external_signal WHERE id IN (${placeholders})`).all(...ids);
+        return (rows as any[]).map(rowToSignal);
+      },
       updateRelevance(id: number, relevanceScore: number): void {
         const info = db.prepare("UPDATE external_signal SET relevance_score = ? WHERE id = ?").run(relevanceScore, id);
         if (info.changes === 0) throw new Error(`signals.updateRelevance: no row with id ${id}`);

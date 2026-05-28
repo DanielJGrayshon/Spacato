@@ -4,7 +4,56 @@ export interface Goal {
   rawText: string;
   convergedSpec: unknown | null;
   status: "eliciting" | "converged";
+  activeDecompositionId: number | null;
 }
+
+export interface Decomposition {
+  id: number;
+  goalId: number;
+  createdAt: number;
+}
+
+export interface Monthly {
+  id: number;
+  decompositionId: number;
+  monthIndex: number;
+  startDate: string;
+  endDate: string;
+  objective: string;
+  description: string;
+  weight: number;
+  progress: number;
+}
+
+export interface Weekly {
+  id: number;
+  decompositionId: number;
+  monthlyId: number;
+  weekIndex: number;
+  startDate: string;
+  endDate: string;
+  objective: string;
+  description: string;
+  weight: number;
+  progress: number;
+}
+
+export interface DailyTask {
+  id: number;
+  decompositionId: number;
+  weeklyId: number;
+  date: string;
+  title: string;
+  description: string;
+  estimatedMinutes: number;
+  status: "pending" | "done" | "skipped";
+  concretizationLevel: "coarse" | "concrete";
+}
+
+export type MonthlyRowInit   = Omit<Monthly,  "id">;
+export type WeeklyRowInit    = Omit<Weekly,   "id">;
+export type DailyTaskRowInit = Omit<DailyTask, "id">;
+export type DecompositionInit = Pick<Decomposition, "goalId">;
 
 import type { Genome } from "@/lib/esc/core";
 

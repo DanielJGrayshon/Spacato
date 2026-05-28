@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS goal (
   converged_spec_json TEXT,
   status TEXT NOT NULL DEFAULT 'eliciting',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  active_decomposition_id INTEGER REFERENCES decomposition(id)
 );
 CREATE TABLE IF NOT EXISTS elicitation_state (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,3 +49,51 @@ CREATE TABLE IF NOT EXISTS query_genome_state (
   state_json TEXT    NOT NULL,
   updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS decomposition (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  goal_id    INTEGER NOT NULL REFERENCES goal(id),
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
+
+CREATE TABLE IF NOT EXISTS monthly (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  decomposition_id INTEGER NOT NULL REFERENCES decomposition(id),
+  month_index      INTEGER NOT NULL,
+  start_date       TEXT    NOT NULL,
+  end_date         TEXT    NOT NULL,
+  objective        TEXT    NOT NULL,
+  description      TEXT    NOT NULL,
+  weight           REAL    NOT NULL,
+  progress         REAL    NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS weekly (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  decomposition_id INTEGER NOT NULL REFERENCES decomposition(id),
+  monthly_id       INTEGER NOT NULL REFERENCES monthly(id),
+  week_index       INTEGER NOT NULL,
+  start_date       TEXT    NOT NULL,
+  end_date         TEXT    NOT NULL,
+  objective        TEXT    NOT NULL,
+  description      TEXT    NOT NULL,
+  weight           REAL    NOT NULL,
+  progress         REAL    NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS daily_task (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  decomposition_id     INTEGER NOT NULL REFERENCES decomposition(id),
+  weekly_id            INTEGER NOT NULL REFERENCES weekly(id),
+  date                 TEXT    NOT NULL,
+  title                TEXT    NOT NULL,
+  description          TEXT    NOT NULL,
+  estimated_minutes    INTEGER NOT NULL,
+  status               TEXT    NOT NULL DEFAULT 'pending',
+  concretization_level TEXT    NOT NULL DEFAULT 'coarse'
+);
+
+CREATE INDEX IF NOT EXISTS idx_monthly_decomp    ON monthly(decomposition_id);
+CREATE INDEX IF NOT EXISTS idx_weekly_monthly    ON weekly(monthly_id);
+CREATE INDEX IF NOT EXISTS idx_daily_weekly      ON daily_task(weekly_id);
+CREATE INDEX IF NOT EXISTS idx_daily_decomp_date ON daily_task(decomposition_id, date);

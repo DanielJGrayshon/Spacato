@@ -1,5 +1,11 @@
 import type { Db } from "./db";
-import type { Goal, ElicitationState, ElicitationQuestion, GoalInterpretation } from "./types";
+import type {
+  Goal, ElicitationState, ElicitationQuestion, GoalInterpretation,
+  Decomposition, DecompositionInit,
+  Monthly, MonthlyRowInit,
+  Weekly, WeeklyRowInit,
+  DailyTask, DailyTaskRowInit,
+} from "./types";
 import type { Genome } from "@/lib/esc/core";
 import type { EscState } from "@/lib/esc/core";
 import type { QueryGenome, StoredSignal, Alert, FeedItemPayload, FeedKind } from "@/lib/p5/types";
@@ -14,6 +20,7 @@ function getGoal(db: Db, id: number): Goal | undefined {
     rawText: row.raw_text,
     convergedSpec: row.converged_spec_json ? JSON.parse(row.converged_spec_json) : null,
     status: row.status,
+    activeDecompositionId: row.active_decomposition_id ?? null,
   };
 }
 
@@ -63,6 +70,49 @@ function rowToAlert(row: any): Alert {
   };
 }
 
+function rowToMonthly(row: any): Monthly {
+  return {
+    id: row.id,
+    decompositionId: row.decomposition_id,
+    monthIndex: row.month_index,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    objective: row.objective,
+    description: row.description,
+    weight: row.weight,
+    progress: row.progress,
+  };
+}
+
+function rowToWeekly(row: any): Weekly {
+  return {
+    id: row.id,
+    decompositionId: row.decomposition_id,
+    monthlyId: row.monthly_id,
+    weekIndex: row.week_index,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    objective: row.objective,
+    description: row.description,
+    weight: row.weight,
+    progress: row.progress,
+  };
+}
+
+function rowToDailyTask(row: any): DailyTask {
+  return {
+    id: row.id,
+    decompositionId: row.decomposition_id,
+    weeklyId: row.weekly_id,
+    date: row.date,
+    title: row.title,
+    description: row.description,
+    estimatedMinutes: row.estimated_minutes,
+    status: row.status,
+    concretizationLevel: row.concretization_level,
+  };
+}
+
 export function makeRepositories(db: Db) {
   return {
     goals: {
@@ -90,6 +140,10 @@ export function makeRepositories(db: Db) {
         if (info.changes === 0) {
           throw new Error(`setConvergedSpec: no goal found with id ${id}`);
         }
+      },
+      setActiveDecomposition(goalId: number, decompositionId: number): void {
+        db.prepare("UPDATE goal SET active_decomposition_id = ? WHERE id = ?")
+          .run(decompositionId, goalId);
       },
     },
     llmCache: {
@@ -232,6 +286,123 @@ export function makeRepositories(db: Db) {
            ON CONFLICT(goal_id) DO UPDATE SET state_json = excluded.state_json, updated_at = datetime('now')`
         ).run(goalId, JSON.stringify(state));
       },
+    },
+    decompositions: {
+      create(input: DecompositionInit): Decomposition {
+        const row = db.prepare(
+          "INSERT INTO decomposition (goal_id) VALUES (?) RETURNING id, goal_id, created_at"
+        ).get(input.goalId) as any;
+        return { id: row.id, goalId: row.goal_id, createdAt: row.created_at };
+      },
+      getById(id: number): Decomposition | null {
+        const row = db.prepare(
+          "SELECT id, goal_id, created_at FROM decomposition WHERE id = ?"
+        ).get(id) as any;
+        return row ? { id: row.id, goalId: row.goal_id, createdAt: row.created_at } : null;
+      },
+      listForGoal(goalId: number): Decomposition[] {
+        const rows = db.prepare(
+          "SELECT id, goal_id, created_at FROM decomposition WHERE goal_id = ? ORDER BY id"
+        ).all(goalId) as any[];
+        return rows.map((r) => ({ id: r.id, goalId: r.goal_id, createdAt: r.created_at }));
+      },
+    },
+    monthlies: {
+      bulkInsert(rows: MonthlyRowInit[]): number[] {
+        const stmt = db.prepare(
+          `INSERT INTO monthly (decomposition_id, month_index, start_date, end_date,
+                                objective, description, weight, progress)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
+        );
+        const ids: number[] = [];
+        db.transaction((rs: MonthlyRowInit[]) => {
+          for (const r of rs) {
+            const { id } = stmt.get(
+              r.decompositionId, r.monthIndex, r.startDate, r.endDate,
+              r.objective, r.description, r.weight, r.progress,
+            ) as any;
+            ids.push(id);
+          }
+        })(rows);
+        return ids;
+      },
+      listForDecomposition(decompositionId: number): Monthly[] {
+        const rows = db.prepare(
+          `SELECT id, decomposition_id, month_index, start_date, end_date,
+                  objective, description, weight, progress
+           FROM monthly WHERE decomposition_id = ? ORDER BY month_index`
+        ).all(decompositionId) as any[];
+        return rows.map(rowToMonthly);
+      },
+    },
+    weeklies: {
+      bulkInsert(rows: WeeklyRowInit[]): number[] {
+        const stmt = db.prepare(
+          `INSERT INTO weekly (decomposition_id, monthly_id, week_index, start_date, end_date,
+                               objective, description, weight, progress)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
+        );
+        const ids: number[] = [];
+        db.transaction((rs: WeeklyRowInit[]) => {
+          for (const r of rs) {
+            const { id } = stmt.get(
+              r.decompositionId, r.monthlyId, r.weekIndex, r.startDate, r.endDate,
+              r.objective, r.description, r.weight, r.progress,
+            ) as any;
+            ids.push(id);
+          }
+        })(rows);
+        return ids;
+      },
+      listForMonthly(monthlyId: number): Weekly[] {
+        const rows = db.prepare(
+          `SELECT id, decomposition_id, monthly_id, week_index, start_date, end_date,
+                  objective, description, weight, progress
+           FROM weekly WHERE monthly_id = ? ORDER BY week_index`
+        ).all(monthlyId) as any[];
+        return rows.map(rowToWeekly);
+      },
+    },
+    dailyTasks: {
+      bulkInsert(rows: DailyTaskRowInit[]): number[] {
+        const stmt = db.prepare(
+          `INSERT INTO daily_task (decomposition_id, weekly_id, date, title, description,
+                                   estimated_minutes, status, concretization_level)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
+        );
+        const ids: number[] = [];
+        db.transaction((rs: DailyTaskRowInit[]) => {
+          for (const r of rs) {
+            const { id } = stmt.get(
+              r.decompositionId, r.weeklyId, r.date, r.title, r.description,
+              r.estimatedMinutes, r.status, r.concretizationLevel,
+            ) as any;
+            ids.push(id);
+          }
+        })(rows);
+        return ids;
+      },
+      listForWeekly(weeklyId: number): DailyTask[] {
+        const rows = db.prepare(
+          `SELECT id, decomposition_id, weekly_id, date, title, description,
+                  estimated_minutes, status, concretization_level
+           FROM daily_task WHERE weekly_id = ? ORDER BY date`
+        ).all(weeklyId) as any[];
+        return rows.map(rowToDailyTask);
+      },
+      listInDateRange(decompositionId: number, from: string, to: string): DailyTask[] {
+        const rows = db.prepare(
+          `SELECT id, decomposition_id, weekly_id, date, title, description,
+                  estimated_minutes, status, concretization_level
+           FROM daily_task
+           WHERE decomposition_id = ? AND date BETWEEN ? AND ?
+           ORDER BY date`
+        ).all(decompositionId, from, to) as any[];
+        return rows.map(rowToDailyTask);
+      },
+    },
+    runInTransaction(fn: () => void): void {
+      db.transaction(fn)();
     },
   };
 }

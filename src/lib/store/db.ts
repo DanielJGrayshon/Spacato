@@ -11,5 +11,10 @@ export function openDb(file = "spacato.sqlite"): Db {
   // Assumes the process runs from the project root (true for `next dev` and Vitest).
   const schema = readFileSync(path.join(process.cwd(), "src/lib/store/schema.sql"), "utf8");
   db.exec(schema);
+  try {
+    db.exec("ALTER TABLE goal ADD COLUMN active_decomposition_id INTEGER REFERENCES decomposition(id)");
+  } catch (err) {
+    if (!String((err as Error).message).includes("duplicate column")) throw err;
+  }
   return db;
 }

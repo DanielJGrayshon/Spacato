@@ -2,23 +2,11 @@ import { z } from "zod";
 import type { LlmRequest } from "@/lib/llm/gateway";
 import type { FeedItem, ScoredItem } from "@/lib/p5/types";
 import type { GoalInterpretation } from "@/lib/store/types";
+import { tokenise } from "@/lib/util/text";
 
 export const KEYWORD_MIN_THRESHOLD = 0.05;
 
 type Gateway = { batchComplete<T>(reqs: LlmRequest<T>[]): Promise<T[]> };
-
-const STOP_WORDS = new Set([
-  "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "at", "for", "with", "by",
-  "from", "as", "is", "are", "was", "were", "be", "been", "being", "it", "its", "this", "that",
-  "these", "those", "i", "you", "he", "she", "we", "they", "my", "your", "our", "their", "not",
-]);
-
-export function tokenise(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 1 && !STOP_WORDS.has(t));
-}
 
 export function extractKeywords(spec: GoalInterpretation): Set<string> {
   const text = [spec.scope, spec.successMetric, spec.constraints, spec.motivation, spec.deadlineShape].join(" ");

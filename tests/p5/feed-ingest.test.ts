@@ -5,7 +5,7 @@ import type { QueryTerm } from "@/lib/p5/types";
 function okResponse(body: unknown) {
   return async () => new Response(JSON.stringify(body), { status: 200 });
 }
-const env = { NEWSAPI_KEY: "k", OPENWEATHER_KEY: "k", ALPHAVANTAGE_KEY: "k" } as NodeJS.ProcessEnv;
+const env = { NEWSAPI_KEY: "k", OPENWEATHER_KEY: "k", ALPHAVANTAGE_KEY: "k" } as unknown as NodeJS.ProcessEnv;
 const newsQuery: QueryTerm = { source: "newsapi", terms: ["solar"], weight: 1 };
 
 describe("feed-ingest", () => {
@@ -18,7 +18,7 @@ describe("feed-ingest", () => {
   });
 
   it("returns [] (no throw) when the API key is missing", async () => {
-    const items = await ingest([newsQuery], { fetchFn: okResponse({}), env: {} as NodeJS.ProcessEnv });
+    const items = await ingest([newsQuery], { fetchFn: okResponse({}), env: {} as unknown as NodeJS.ProcessEnv });
     expect(items).toEqual([]);
   });
 

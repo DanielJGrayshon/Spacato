@@ -50,15 +50,15 @@ The OpenRouter key lives only server-side (a Next API route); it never enters th
   mutate phases concurrently (`Promise.all`); `QueryTerm.weight` is consumed via a weighted-relevance mean
   in the ESC fitness (selection ranks on that, so weight reaches selection transitively); content-dedup is
   scoped to open-alert signals via `signals.listByIds` (no more unbounded `listForGoal` scan).
-- **Gateway robustness (NEW 2026-05-28):** all three R1 gateway items closed — `src/lib/llm/gateway.ts`
+- **Gateway robustness:** all three R1 gateway items closed — `src/lib/llm/gateway.ts`
   now sets `response_format: { type: "json_object" }` on outgoing OpenRouter requests, strips any markdown
   code-fence (any language tag) from model output, and wraps non-JSON response bodies (e.g. HTML
   auth/gateway-error pages) with an attributable status+snippet error instead of an opaque `SyntaxError`.
-- **`next build` route-export fix (NEW 2026-05-28):** route handlers no longer re-export non-handler
+- **`next build` route-export fix:** route handlers no longer re-export non-handler
   functions (App Router rejects this); tests import inner functions directly from `@/lib/...`. `tsconfig.json`
   adopts Next 14's recommended layout (`isolatedModules`, `jsx: preserve`, Next plugin, `.next/types/**/*.ts`).
   `next build` *should* now succeed; it has still not actually been run (see §9 risk 1).
-- **`/api/alerts/acknowledge` (NEW 2026-05-28, commit `091f18b`):** `src/lib/p5/acknowledge-handler.ts`
+- **`/api/alerts/acknowledge` (commit `091f18b`):** `src/lib/p5/acknowledge-handler.ts`
   (zod-validated `{alertId: positive int}`, translates the repo "no row with id N" throw to 404, rethrows
   others) + `src/app/api/alerts/acknowledge/route.ts` (thin POST, no helper re-exports) +
   `scripts/ack-alert.mjs` (Node-20 ESM CLI caller; native fetch, no deps; `node scripts/ack-alert.mjs <id>`,

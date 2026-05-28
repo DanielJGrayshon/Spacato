@@ -148,7 +148,7 @@ export interface ElicitationState {
   beliefWeights: number[];
   pendingQuestion: ElicitationQuestion | null;
   status: "active" | "converged";
-  vectors: Record<string, number[]>;   // NEW — content-hash -> embedding vector
+  vectors: Record<string, number[]>;   // content-hash -> embedding vector
 }
 ```
 
@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS elicitation_state (
   belief_json TEXT NOT NULL DEFAULT '{}',
   pending_question_json TEXT,
   status TEXT NOT NULL DEFAULT 'active',
-  vectors_json TEXT NOT NULL DEFAULT '{}'   -- NEW
+  vectors_json TEXT NOT NULL DEFAULT '{}'
 );
 ```
 
@@ -282,7 +282,7 @@ export function makeDistanceFn(vectors: Record<string, number[]>): DistanceFn {
 
 ```ts
 // belief.ts
-export const TAU = 0.2;                       // tunable; was 0.3 with binary-Hamming
+export const TAU = 0.2;                       // tunable
 export function sigma(pop, k, i, j, distance: DistanceFn): number;
 export function updateBelief(belief, pop, q, answer, distance: DistanceFn): Belief;
 

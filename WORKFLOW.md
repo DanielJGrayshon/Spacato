@@ -62,3 +62,18 @@ lean: one drafter, one reviewer, iterating, then one orchestrator pass.
 - Tests must actually verify behaviour (real dependencies where cheap; mocks only at true seams).
 - Verify before claiming done — run the command, read the output, then report.
 - Commit frequently with clear messages. Keep the working tree honest.
+
+## Code-change hygiene (no temporal-reference bloat)
+
+The reader can't see the previous version of your code. Don't make them try.
+
+- **No "edit" or backreference comments.** Never write `// edit:`, `// was: X`, `// previously …`,
+  `// changed from …`, `// new:`, `// NEW —`, `-- NEW`, or anything that describes how the code used
+  to look. Comments explain *what the code does now* and *why*, not how it changed.
+- **No history in identifiers.** No `*_v2`, `*_new`, `legacy_*`, `oldFoo`/`newFoo` pairs. The current
+  name is the only name.
+- **Patch in situ; do not parallel-clone.** When a file needs to change, edit or overwrite it. Do not
+  create `foo2.ts`, `foo_new.ts`, `foo.refactor.ts`, or copy-and-modify into a sibling. Git history
+  is where the previous version lives.
+- **Prose in specs/plans may explain rationale** ("we replaced X with Y because …") — that's design
+  context. The rule above is about code, code comments, file names, and identifiers.

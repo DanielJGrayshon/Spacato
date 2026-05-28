@@ -31,14 +31,15 @@ export function select<T>(cfg: EscConfig<T>, population: Genome<T>[], scores: nu
 
 /** Composable primitive: next population = parents plus one offspring per parent.
  *  Offspring `m` is produced from `parents[m]` and `parents[(m+1) % n]`, appended after the parents:
- *  the return is `[...parents, ...offspring]` (length `2 * parents.length`). */
+ *  the return is `[...parents, ...offspring]` (length `2 * parents.length`).
+ *  Crossover for all offspring runs concurrently, then mutate for all offspring runs concurrently —
+ *  honouring the P5 spec's batching intent (§5.3/§5.4) without changing operator signatures.
+ *  Promise.all preserves index order, so outputs are identical to the previous serial loop. */
 export async function evolve<T>(cfg: Pick<EscConfig<T>, "crossover" | "mutate">, parents: Genome<T>[]): Promise<Genome<T>[]> {
-  const offspring: Genome<T>[] = [];
-  for (let i = 0; i < parents.length; i++) {
-    const a = parents[i];
-    const b = parents[(i + 1) % parents.length];
-    offspring.push(await cfg.mutate(await cfg.crossover(a, b)));
-  }
+  const crossed = await Promise.all(
+    parents.map((a, i) => cfg.crossover(a, parents[(i + 1) % parents.length]))
+  );
+  const offspring = await Promise.all(crossed.map((c) => cfg.mutate(c)));
   return [...parents, ...offspring];
 }
 

@@ -1,0 +1,1 @@
+ALTER TABLE goal ADD COLUMN timeframe TEXT NOT NULL DEFAULT '6 months';

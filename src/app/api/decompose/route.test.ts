@@ -1,3 +1,5 @@
+// End-to-end POST coverage lives in src/lib/p2/decompose-handler.test.ts.
+// This file unit-tests only the pure mapErrorToStatus helper.
 import { describe, it, expect } from "vitest";
 import { mapErrorToStatus } from "./error-mapping";
 

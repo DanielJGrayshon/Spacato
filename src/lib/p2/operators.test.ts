@@ -1,14 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { makeOperators } from "./operators";
 import type { MonthSpan, WeekSpan } from "@/lib/util/calendar";
+import type { Gateway } from "@/lib/llm/gateway";
 
-function makeStubGateway(canned: any) {
+function makeStubGateway(canned: any): Gateway {
   return {
     complete: vi.fn().mockResolvedValue(canned),
     embed: vi.fn(),
     embedBatch: vi.fn(),
     batchComplete: vi.fn(),
-  } as any;
+  } as unknown as Gateway;
 }
 
 const months: MonthSpan[] = Array.from({ length: 6 }, (_, i) => ({
@@ -51,6 +52,17 @@ describe("decomposeGoalToMonthly", () => {
   });
 });
 
+describe("zero-length short-circuit", () => {
+  it("returns [] immediately for zero-length input without calling gw.complete", async () => {
+    const gw = makeStubGateway({ items: [] });
+    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    expect(await ops.decomposeGoalToMonthly("ctx", [])).toEqual([]);
+    expect(await ops.decomposeMonthlyToWeekly("g", "m", [])).toEqual([]);
+    expect(await ops.decomposeWeeklyToDaily("g", "m", "w", [])).toEqual([]);
+    expect(gw.complete).not.toHaveBeenCalled();
+  });
+});
+
 describe("decomposeMonthlyToWeekly", () => {
   it("passes the monthly context into the prompt and returns weeks", async () => {
     const canned = { items: weeks.map((_, i) => ({ objective: `w${i}`, description: "x" })) };
@@ -77,12 +89,15 @@ describe("decomposeWeeklyToDaily", () => {
     expect(result[0].estimatedMinutes).toBe(45);
   });
 
-  it("includes the coarse-but-actionable framing in the system prompt", async () => {
+  it("system prompt forbids brands, vendor URLs, and tutorial links (coarse framing)", async () => {
     const canned = { items: dates.map(() => ({ title: "t", description: "d", estimatedMinutes: 45 })) };
     const gw = makeStubGateway(canned);
     const ops = makeOperators(gw, "openai/gpt-4o-mini");
     await ops.decomposeWeeklyToDaily("goal-ctx", "monthly-ctx", "weekly-ctx", dates);
     const sysMsg = gw.complete.mock.calls[0][0].messages.find((m: any) => m.role === "system").content;
-    expect(sysMsg).toMatch(/coarse|brand|vendor|concret/i);
+    expect(sysMsg).toMatch(/brand-specific/i);
+    expect(sysMsg).toMatch(/vendor URL/i);
+    expect(sysMsg).toMatch(/tutorial link/i);
+    expect(sysMsg).toMatch(/concretization/i);
   });
 });

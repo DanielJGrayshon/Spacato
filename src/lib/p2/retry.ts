@@ -11,8 +11,9 @@ export function defaultIsTransient(err: unknown): boolean {
   if (err instanceof SyntaxError) return true;
   if (!(err instanceof Error)) return false;
   const msg = err.message;
+  if (msg.startsWith("p2: retry exhausted")) return false;
   if (msg.startsWith("p2:")) return true;
-  if (/\b5\d\d\b/.test(msg)) return true;
+  if (/\bOpenRouter\s+5\d\d\b|\bstatus[=:]\s*5\d\d\b/i.test(msg)) return true;
   if (/(ECONNRESET|ETIMEDOUT|fetch failed|network error)/i.test(msg)) return true;
   return false;
 }
@@ -41,5 +42,8 @@ export async function withRetry<T>(
     }
   }
   const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
-  throw new Error(`p2: retry exhausted after ${attempts} attempts: ${msg}`);
+  throw new Error(
+    `p2: retry exhausted after ${attempts} attempts: ${msg}`,
+    { cause: lastErr },
+  );
 }

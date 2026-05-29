@@ -55,3 +55,21 @@ describe("array wrappers", () => {
     })).not.toThrow();
   });
 });
+
+describe("weekly and daily array wrappers", () => {
+  it("weeklyInitSchema is a reference alias of monthlyInitSchema (same shape per §7)", () => {
+    expect(weeklyInitSchema).toBe(monthlyInitSchema);
+  });
+
+  it("weeklyArraySchema accepts the same { items: [...] } wrapper shape", () => {
+    expect(() => weeklyArraySchema.parse({
+      items: [{ objective: "x", description: "x" }],
+    })).not.toThrow();
+  });
+
+  it("dailyArraySchema accepts { items: [DailyTaskInit, ...] }", () => {
+    expect(() => dailyArraySchema.parse({
+      items: [{ title: "x", description: "x", estimatedMinutes: 30 }],
+    })).not.toThrow();
+  });
+});

@@ -20,6 +20,10 @@ describe("mapErrorToStatus", () => {
     expect(mapErrorToStatus("p2: retry exhausted after 3 attempts: ECONNRESET")).toBe(503);
   });
 
+  it("returns 400 for by-date-in-the-past errors", () => {
+    expect(mapErrorToStatus("p2: p2.calendar: by-date in the past: 2024-01-01")).toBe(400);
+  });
+
   it("returns 500 for everything else", () => {
     expect(mapErrorToStatus("kaboom")).toBe(500);
     expect(mapErrorToStatus("")).toBe(500);

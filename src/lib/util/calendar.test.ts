@@ -85,4 +85,9 @@ describe("buildSkeleton", () => {
   it("throws on zero-length weeks", () => {
     expect(() => buildSkeleton("0 weeks", "2026-05-28")).toThrow();
   });
+
+  it("throws on a 'by YYYY-MM-DD' deadline that is already in the past", () => {
+    expect(() => buildSkeleton("by 2024-01-01", "2026-05-28"))
+      .toThrowError(/p2\.calendar: by-date in the past: 2024-01-01/);
+  });
 });

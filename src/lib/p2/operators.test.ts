@@ -1,15 +1,20 @@
 import { describe, it, expect, vi } from "vitest";
+import type { MockedFunction } from "vitest";
 import { makeOperators } from "./operators";
 import type { MonthSpan, WeekSpan } from "@/lib/util/calendar";
 import type { Gateway } from "@/lib/llm/gateway";
 
-function makeStubGateway(canned: any): Gateway {
+interface StubGateway extends Omit<Gateway, "complete"> {
+  complete: MockedFunction<Gateway["complete"]>;
+}
+
+function makeStubGateway(canned: any): StubGateway {
   return {
     complete: vi.fn().mockResolvedValue(canned),
     embed: vi.fn(),
     embedBatch: vi.fn(),
     batchComplete: vi.fn(),
-  } as unknown as Gateway;
+  } as unknown as StubGateway;
 }
 
 const months: MonthSpan[] = Array.from({ length: 6 }, (_, i) => ({
@@ -27,7 +32,7 @@ describe("decomposeGoalToMonthly", () => {
   it("calls gw.complete once with bypassCache=true and returns the items array", async () => {
     const canned = { items: months.map((_, i) => ({ objective: `m${i}`, description: "x" })) };
     const gw = makeStubGateway(canned);
-    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    const ops = makeOperators(gw as unknown as Gateway, "openai/gpt-4o-mini");
     const result = await ops.decomposeGoalToMonthly("goal-ctx", months);
     expect(gw.complete).toHaveBeenCalledOnce();
     expect(gw.complete.mock.calls[0][0].bypassCache).toBe(true);
@@ -37,7 +42,7 @@ describe("decomposeGoalToMonthly", () => {
 
   it("throws a p2: length error on wrong-length response (transient to withRetry)", async () => {
     const gw = makeStubGateway({ items: [{ objective: "m0", description: "x" }] });
-    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    const ops = makeOperators(gw as unknown as Gateway, "openai/gpt-4o-mini");
     await expect(ops.decomposeGoalToMonthly("goal-ctx", months))
       .rejects.toThrowError(/p2: decomposeGoalToMonthly returned 1 items, expected 6/);
   });
@@ -45,9 +50,9 @@ describe("decomposeGoalToMonthly", () => {
   it("includes an explicit JSON-object example in the user prompt", async () => {
     const canned = { items: months.map((_, i) => ({ objective: `m${i}`, description: "x" })) };
     const gw = makeStubGateway(canned);
-    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    const ops = makeOperators(gw as unknown as Gateway, "openai/gpt-4o-mini");
     await ops.decomposeGoalToMonthly("goal-ctx", months);
-    const userMsg = gw.complete.mock.calls[0][0].messages.find((m: any) => m.role === "user").content;
+    const userMsg = gw.complete.mock.calls[0][0].messages.find((m: any) => m.role === "user")!.content;
     expect(userMsg).toContain('{"items":');
   });
 });
@@ -55,7 +60,7 @@ describe("decomposeGoalToMonthly", () => {
 describe("zero-length short-circuit", () => {
   it("returns [] immediately for zero-length input without calling gw.complete", async () => {
     const gw = makeStubGateway({ items: [] });
-    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    const ops = makeOperators(gw as unknown as Gateway, "openai/gpt-4o-mini");
     expect(await ops.decomposeGoalToMonthly("ctx", [])).toEqual([]);
     expect(await ops.decomposeMonthlyToWeekly("g", "m", [])).toEqual([]);
     expect(await ops.decomposeWeeklyToDaily("g", "m", "w", [])).toEqual([]);
@@ -67,10 +72,10 @@ describe("decomposeMonthlyToWeekly", () => {
   it("passes the monthly context into the prompt and returns weeks", async () => {
     const canned = { items: weeks.map((_, i) => ({ objective: `w${i}`, description: "x" })) };
     const gw = makeStubGateway(canned);
-    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    const ops = makeOperators(gw as unknown as Gateway, "openai/gpt-4o-mini");
     const result = await ops.decomposeMonthlyToWeekly("goal-ctx", "monthly-ctx", weeks);
     expect(result).toHaveLength(4);
-    const userMsg = gw.complete.mock.calls[0][0].messages.find((m: any) => m.role === "user").content;
+    const userMsg = gw.complete.mock.calls[0][0].messages.find((m: any) => m.role === "user")!.content;
     expect(userMsg).toContain("monthly-ctx");
   });
 });
@@ -83,7 +88,7 @@ describe("decomposeWeeklyToDaily", () => {
       title: "t", description: "d", estimatedMinutes: 45,
     })) };
     const gw = makeStubGateway(canned);
-    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    const ops = makeOperators(gw as unknown as Gateway, "openai/gpt-4o-mini");
     const result = await ops.decomposeWeeklyToDaily("goal-ctx", "monthly-ctx", "weekly-ctx", dates);
     expect(result).toHaveLength(7);
     expect(result[0].estimatedMinutes).toBe(45);
@@ -92,9 +97,9 @@ describe("decomposeWeeklyToDaily", () => {
   it("system prompt forbids brands, vendor URLs, and tutorial links (coarse framing)", async () => {
     const canned = { items: dates.map(() => ({ title: "t", description: "d", estimatedMinutes: 45 })) };
     const gw = makeStubGateway(canned);
-    const ops = makeOperators(gw, "openai/gpt-4o-mini");
+    const ops = makeOperators(gw as unknown as Gateway, "openai/gpt-4o-mini");
     await ops.decomposeWeeklyToDaily("goal-ctx", "monthly-ctx", "weekly-ctx", dates);
-    const sysMsg = gw.complete.mock.calls[0][0].messages.find((m: any) => m.role === "system").content;
+    const sysMsg = gw.complete.mock.calls[0][0].messages.find((m: any) => m.role === "system")!.content;
     expect(sysMsg).toMatch(/brand-specific/i);
     expect(sysMsg).toMatch(/vendor URL/i);
     expect(sysMsg).toMatch(/tutorial link/i);

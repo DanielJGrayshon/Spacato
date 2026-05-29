@@ -1,6 +1,6 @@
 # Spacato — Handoff
 
-> Last updated: 2026-05-28 (S0 semantic distance shipped to `main`; tree at `c:\dev\Spacato`).
+> Last updated: 2026-05-29 (P2 decomposition shipped + marathon live-run PASS; tree at `c:\dev\Spacato`).
 > This is the single document a fresh contributor (human or agent) reads to resume work. Pair it with
 > `WORKFLOW.md` (how we work) and `docs/canonical-project-graph.md` (the design).
 
@@ -40,10 +40,11 @@ revert working-tree edits and corrupt concurrent git state in earlier sessions (
 must happen at `c:\dev\Spacato`.
 
 **Branches:**
-- `main` — tip `0d4999a`. Phase A foundation + S0 elicitation (with semantic distance) + P5
-  news/signals (spec-fidelity-fixed) + R1 gateway hardening + Next tsconfig + `next build` route-export
-  fix + `/api/alerts/acknowledge` route + live-discovered operator-prompt fix + the full S0 semantic
-  distance work just merged. **121 tests green, `npm run typecheck` clean, `npm run build` compiles.**
+- `main` — tip `7de30e8`. Phase A foundation + S0 elicitation (with semantic distance) + P5
+  news/signals + R1 gateway hardening + P2 decomposition (versioned month→week→day tree) just shipped
+  with a successful live marathon run against real OpenRouter. **186 tests green, `npm run typecheck`
+  clean, `npm run build` compiles.** (Test count dropped from 188 → 186 on 2026-05-29 after a duplicate
+  `gateway.test.ts` was consolidated; three unique `bypassCache` cases were preserved.)
 
 **Built and on `main`:**
 - **Foundation:** `src/lib/store` (SQLite), `src/lib/llm` (OpenRouter gateway), `src/lib/esc`
@@ -71,21 +72,30 @@ must happen at `c:\dev\Spacato`.
   examples and an enumerated-constraint sentence in their prompts so structured-output parsing holds
   against a real provider. Each enum is described as "exactly one of these three string values" rather
   than the pipe-separated regex shorthand the LLM read literally.
+- **P2 decomposition:** `src/lib/p2/*` (`types`, `operators`, `retry`, `decompose-handler`) +
+  `src/lib/util/calendar.ts` + `src/app/api/decompose/route.ts`. Versioned three-layer plan tree
+  (monthly → weekly → daily) persisted to SQLite via `decomposition`, `monthly`, `weekly`, `daily_task`
+  tables; `goal.activeDecompositionId` flips on commit. Pure per-layer operators (one `gw.complete`
+  call per parent, `bypassCache: true`); orchestrator owns calendar/transaction/retry. LLM I/O bypasses
+  the cache for genuine re-decomposition; all other features keep caching. P2 also extended the gateway
+  with `LlmRequest.bypassCache?: boolean` (default false).
 
 **Run live to date (against real OpenRouter `gpt-4o-mini`):**
-- `next build` compiled cleanly; `next start` served live HTTP.
-- `POST /api/signals` 400-guard returned `{"error":"goal 999999 not found or not converged"}` end-to-end.
-- `POST /api/elicit` (start) produced four genuinely distinct goal interpretations for "run a marathon
-  in 6 months": finishing-focused / capability-focused / participation-focused / time-goal-focused.
-- `POST /api/elicit` (answer) ran the live S0 crossover+mutate operators and returned an info-gain
-  pair — proving the elicitation loop works end-to-end on a real model.
-- `POST /api/signals` on a converged-spec goal ran the live P5 genome seed/crossover/mutate; produced
-  diverse query genomes (weather-only, market-only, hybrid, news+market+weather mix).
-- Four real shipped bugs found and fixed during these runs (see §9 risk 1 for the catalogue).
+- `POST /api/elicit` and `POST /api/signals` proven end-to-end (interpretation diversity, info-gain
+  pair, P5 genome diversity); see git history for the per-feature live notes.
+- `POST /api/decompose` for the marathon goal — **P2 marathon live-run PASSED on 2026-05-29.**
+  Coherent month→week→day ladder, `estimatedMinutes` in the expected 15–120 range, no brand names or
+  vendor URLs (coarse-but-actionable framing held), ≤ 60 s wall-clock, ≈ $0.013. Body and tree
+  snapshots at `p2-marathon-*.json` in the repo root.
+- Four real shipped bugs found and fixed across the elicit / signals runs (see §9 risk 1).
 
-**Spec'd but not built:** P2 decomposition (month→week→day), P3 sliding-window re-planner,
-P4 timetable presets, P6 the entire web UI. No human-facing UI exists yet; humans exercise the API
-via `curl` / `scripts/ack-alert.mjs`.
+**Spec'd but not built:** P3 sliding-window re-planner (spec just drafted today with a v1+v2 split —
+v1 is lock + reweight + partial redecomp, v2 covers concretization and signal-pressure feeds), P4
+timetable presets, P6 the entire web UI. Schema migration framework v1 spec also drafted today
+(`docs/superpowers/specs/2026-05-29-schema-migration-framework-v1.md`); intended to land before P3
+implementation so P3's new tables go through the framework rather than extending the additive-ALTER
+pattern an eighth time. No human-facing UI exists yet; humans exercise the API via `curl` /
+`scripts/ack-alert.mjs`.
 
 ---
 
@@ -192,34 +202,36 @@ batched LLM justification),
 
 In rough order of leverage:
 
-1. **Live convergence run** (out-of-CI manual check anticipated by the semantic-distance spec §9.4).
-   With semantic distance now on `main`, drive S0 elicitation to convergence against real OpenRouter
-   on the "run a marathon" goal and confirm: (a) belief weights move meaningfully on the first
-   answer (this is the bug fix — old distance left them pinned); (b) `TAU = 0.2` produces sensible
-   convergence depth (3–6 questions). Tune `TAU` if needed — single constant, no structural change.
-   This is also the OQ-1 calibration for the semantic-distance spec.
+1. **Schema migration framework v1 — implement.** Spec drafted today at
+   `docs/superpowers/specs/2026-05-29-schema-migration-framework-v1.md`. Lands `src/lib/store/migrate.ts`
+   + `src/lib/store/migrations/001…006-*.sql`, replaces the `try { ALTER TABLE … }` blocks and
+   `schema.sql` `readFileSync` in `openDb`. Must land **before** P3 implementation so P3's three new
+   tables go through the framework rather than extending the additive-ALTER pattern an eighth time.
+   The spec calls out a cutover decision (§10 OQ-2) the implementing worker needs to pick — default
+   is wipe-and-reinit-during-cutover, which matches v1's existing dev-DB stance.
 
-2. **P2 spec drafting.** Decomposition (month → week → day) is the core product promise and is the
-   prerequisite for P3, P4, and parts of P6. Peer-gated drafting per §4 process; cover the
-   data model for the task tree, the propagation rules across the three time scales, the LLM operator
-   pattern (likely EvoPrompt again), and the persistence shape. Then a plan, then build.
+2. **P3 plan + implementation.** Spec was just drafted (v1+v2 split documented in the spec). After
+   the migration framework lands, plan and build P3 v1: lock the near 2-week window, reweight the
+   rest from slippage + signal pressure, partial redecomp where week boundaries shift. P3 reuses the
+   P2 operators verbatim for partial redecomp.
 
 3. **P6 spec drafting (shell + S0 chat view first).** The app has no human-facing UI. The S0 chat
    view can be specced and built first because `/api/elicit` is a stable contract; the news side
    window can come right after because `/api/signals` is also stable. Plan/timeline views and the
-   daily timetable can wait until P2/P3 data shapes exist.
+   daily timetable can wait until P3 data shapes exist on the read side.
 
-4. **CI.** A GitHub Action running `npm test && npm run typecheck` to gate pushes. One small worker
-   task, high leverage — at least one of the live bugs (the Next route-export issue) was a build-only
-   failure tests didn't catch. `npm run build` should also be in the gate.
+4. **CI.** A GitHub Action running `npm test && npm run typecheck && npm run build` to gate pushes.
+   One small worker task, high leverage — at least one of the live bugs (the Next route-export issue)
+   was a build-only failure tests didn't catch.
 
 5. **Deferred minors** — one tidy commit when appropriate: `queryTermSchema.weight` → `.positive()`
    in `genome.ts`; pulling `queryWeight` out of `FeedItemPayload` (currently persists genome-lineage
    metadata into source-item payload, harmless because nothing reads it back). See §8.
 
-6. **Schema migration framework.** Both `external_signal.genome_id` and `elicitation_state.vectors_json`
-   were added via additive `CREATE TABLE IF NOT EXISTS` + `DEFAULT`. v1 stance is wipe-and-reinit, but
-   any move toward persistence beyond a single local dev DB will need real migrations.
+6. **(Open, lower-leverage) Live convergence calibration for `TAU = 0.2`.** Semantic distance §9.4
+   anticipated this; not blocking any feature work. Drive S0 to convergence on the marathon goal,
+   confirm 3–6 questions to convergence and meaningful first-answer belief shift, tune `TAU` only if
+   off. Same `TAU` value documented in §6; no structural change either way.
 
 ---
 
@@ -255,7 +267,7 @@ In rough order of leverage:
 ```bash
 # at c:\dev\Spacato
 npm install
-npm test              # vitest — 121 tests on main
+npm test              # vitest — 186 tests on main
 npm run typecheck     # tsc --noEmit — also clean on main
 npm run build         # next build — compiles; /api/elicit and /api/signals are dynamic routes
 cp .env.local.example .env.local   # then put a real OPENROUTER_API_KEY in it
@@ -288,8 +300,8 @@ npm run dev           # next dev — booted live; first elicit + first signals c
   (e.g. `"s0.annotate.embed_failed"`) would make production logs grep-able.
 
 **Standing (pre-existing R1/R2):**
-- **Store:** cache prepared statements; `SELECT` explicit columns; schema migration/versioning
-  (currently `IF NOT EXISTS` only — see §9 risk 4 on the `genome_id` and `vectors_json` columns).
+- **Store:** cache prepared statements; `SELECT` explicit columns. Schema migration/versioning has a
+  drafted v1 spec (§5 step 1); P5 OQ-4 / semantic-distance OQ-3 / P2 OQ-3 all roll up into it.
 - **ESC/S0:** belief-weight epsilon floor (underflow >~40 updates; current cap is 8); directional
   `sigma` test.
 - **P5 (spec OQs §10):** OQ-1 concrete feed providers concretized but unmonitored for free-tier drift;
@@ -336,11 +348,13 @@ npm run dev           # next dev — booted live; first elicit + first signals c
    UI (P6) or `scripts/ack-alert.mjs` actually drives the loop in live use, the factor stays at the
    Laplace prior. Mechanism is no longer the blocker; *exercise* is.
 
-4. **Schema columns added via `CREATE TABLE IF NOT EXISTS` + `DEFAULT`.** Affects
-   `external_signal.genome_id` and `elicitation_state.vectors_json`. Any SQLite file created before
-   a given column existed will NOT have it — `IF NOT EXISTS` only creates the table on first run; it
-   does not `ALTER` an existing table. Wipe the DB (`*.sqlite` is gitignored) or write a one-off
-   `ALTER TABLE`. There is still no migration framework (P5 OQ-4 / semantic-distance OQ-3).
+4. **Schema additions still use mixed `IF NOT EXISTS` + defensive `ALTER TABLE`.** Six additive
+   events to date: `external_signal.genome_id`, `elicitation_state.vectors_json`,
+   `goal.active_decomposition_id`, `goal.timeframe`, the four P2 tables, and the four P2 indices.
+   P3 would be the seventh (three new tables). Migration framework v1 spec drafted today
+   (§5 step 1, `docs/superpowers/specs/2026-05-29-schema-migration-framework-v1.md`); intended to
+   land before P3 implementation. v1 dev stance remains "wipe the DB" (`*.sqlite` is gitignored); a
+   stale-DB symptom is a runtime SQL error against a missing column.
 
 5. **The OneDrive copy is hazardous; treat the canonical tree as `c:\dev\Spacato`.** Earlier in the
    project there was a parallel clone inside OneDrive sync. Repeated observations: OneDrive
@@ -362,10 +376,14 @@ npm run dev           # next dev — booted live; first elicit + first signals c
 - `docs/canonical-project-graph.md` — the two canonical representations + 7-subsystem decomposition +
   decisions.
 - `docs/superpowers/specs/2026-05-27-esc-s0-p5-design.md` — first-slice spec.
-- `docs/superpowers/specs/2026-05-27-p5-signals-design.md` — P5 spec (built; reconciled with
-  implementation 2026-05-28).
-- `docs/superpowers/specs/2026-05-28-s0-semantic-distance-design.md` — semantic-distance spec (built
-  and merged 2026-05-28).
+- `docs/superpowers/specs/2026-05-27-p5-signals-design.md` — P5 spec (built).
+- `docs/superpowers/specs/2026-05-28-s0-semantic-distance-design.md` — semantic-distance spec (built).
+- `docs/superpowers/specs/2026-05-28-p2-decomposition-design.md` — P2 spec (built; marathon live-run
+  PASS 2026-05-29).
+- `docs/superpowers/specs/2026-05-29-p3-sliding-window-design.md` — P3 spec (drafted 2026-05-29 with
+  v1+v2 split).
+- `docs/superpowers/specs/2026-05-29-schema-migration-framework-v1.md` — Schema migration framework
+  v1 spec (drafted 2026-05-29; intended to land before P3 implementation).
 - `docs/superpowers/R1-review-phase-a.md` — interface review after Phase A.
 
 **Plans (the "how we built it" task lists):**
@@ -381,7 +399,5 @@ npm run dev           # next dev — booted live; first elicit + first signals c
   comments, no parallel-clone files) referenced throughout this doc.
 
 **Not yet drafted (the next product slice):**
-- P2 decomposition spec — month → week → day task-tree generation and propagation.
-- P3 sliding-window re-planner spec — 2-week lock + trickle-down updates.
 - P4 timetable presets spec — daily scheduling from P3's daily output.
 - P6 UI spec — the human-facing surface; recommended first slice is shell + S0 chat view.

@@ -1,5 +1,5 @@
 import type { Repositories } from "@/lib/store/repositories";
-import type { Goal, MonthlyRowInit, WeeklyRowInit, DailyTaskRowInit }
+import type { Goal, Monthly, Weekly, DailyTask, MonthlyRowInit, WeeklyRowInit, DailyTaskRowInit }
   from "@/lib/store/types";
 import type { P2Operators } from "./operators";
 import type * as calendarModule from "@/lib/util/calendar";
@@ -15,10 +15,16 @@ export interface DecomposeDeps {
 export interface DecomposeResult {
   decompositionId: number;
   tree: {
-    monthlies: ReturnType<Repositories["monthlies"]["listForDecomposition"]>;
-    weeklies: ReturnType<Repositories["weeklies"]["listForMonthly"]>[];
-    dailyTasks: ReturnType<Repositories["dailyTasks"]["listForWeekly"]>[];
+    monthlies: Monthly[];
+    weeklies: Weekly[][];
+    dailyTasks: DailyTask[][];
   };
+}
+
+interface FlatWeek {
+  weekSpan: { startDate: string; endDate: string; dates: string[] };
+  parentMonthlyCtx: string;
+  weeklyCtx: string;
 }
 
 function renderGoalContext(goal: Goal): string {
@@ -35,14 +41,18 @@ function renderMonthlyContext(
   m: { objective: string; description: string },
   span: { startDate: string; endDate: string },
 ): string {
-  return `Objective: ${m.objective}\nDescription: ${m.description}\nSpan: ${span.startDate} -> ${span.endDate}`;
+  return `Objective: ${m.objective}
+Description: ${m.description}
+Span: ${span.startDate} -> ${span.endDate}`;
 }
 
 function renderWeeklyContext(
   w: { objective: string; description: string },
   span: { startDate: string; endDate: string },
 ): string {
-  return `Objective: ${w.objective}\nDescription: ${w.description}\nSpan: ${span.startDate} -> ${span.endDate}`;
+  return `Objective: ${w.objective}
+Description: ${w.description}
+Span: ${span.startDate} -> ${span.endDate}`;
 }
 
 export async function handleDecompose(
@@ -58,7 +68,7 @@ export async function handleDecompose(
   try {
     skeleton = deps.calendar.buildSkeleton(goal.timeframe, deps.today);
   } catch (err) {
-    throw new Error(`p2: ${(err as Error).message}`);
+    throw new Error(`p2: ${(err as Error).message}`, { cause: err });
   }
 
   const goalCtx = renderGoalContext(goal);
@@ -78,27 +88,15 @@ export async function handleDecompose(
     ),
   );
 
-  interface FlatWeek {
-    monthIndex: number;
-    weekIndexInMonth: number;
-    weeklyInit: { objective: string; description: string };
-    weekSpan: { startDate: string; endDate: string; dates: string[] };
-    parentMonthlyCtx: string;
-    weeklyCtx: string;
-  }
   const flatWeeks: FlatWeek[] = [];
   for (let i = 0; i < skeleton.months.length; i++) {
     const monthlyCtxStr = renderMonthlyContext(monthlyInits[i], skeleton.months[i]);
     for (let j = 0; j < skeleton.weeksByMonth[i].length; j++) {
       const weekSpan = skeleton.weeksByMonth[i][j];
-      const weeklyInit = weeklyInitsByMonth[i][j];
       flatWeeks.push({
-        monthIndex: i,
-        weekIndexInMonth: j,
-        weeklyInit,
         weekSpan,
         parentMonthlyCtx: monthlyCtxStr,
-        weeklyCtx: renderWeeklyContext(weeklyInit, weekSpan),
+        weeklyCtx: renderWeeklyContext(weeklyInitsByMonth[i][j], weekSpan),
       });
     }
   }
@@ -112,7 +110,7 @@ export async function handleDecompose(
     ),
   );
 
-  // All LLM calls succeeded; persist atomically.
+  // Persist
   const decompositionId = deps.repos.runInTransaction(() => {
     const newId = deps.repos.decompositions.create({ goalId: input.goalId }).id;
 

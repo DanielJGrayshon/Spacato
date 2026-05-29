@@ -110,6 +110,15 @@ describe("handleDecompose", () => {
 
     expect(repos.decompositions.listForGoal(goal.id)).toHaveLength(0);
     expect(repos.goals.get(goal.id)?.activeDecompositionId).toBeNull();
+
+    // Stronger: a refactor that opened the transaction early would land
+    // monthly+weekly rows before the layer-3 failure. Catch that.
+    const allMonthlyRows = db.prepare("SELECT COUNT(*) AS n FROM monthly").get() as { n: number };
+    const allWeeklyRows  = db.prepare("SELECT COUNT(*) AS n FROM weekly").get() as { n: number };
+    const allDailyRows   = db.prepare("SELECT COUNT(*) AS n FROM daily_task").get() as { n: number };
+    expect(allMonthlyRows.n).toBe(0);
+    expect(allWeeklyRows.n).toBe(0);
+    expect(allDailyRows.n).toBe(0);
   });
 
   it("throws when the goal has no convergedSpec", async () => {
@@ -121,7 +130,22 @@ describe("handleDecompose", () => {
     )).rejects.toThrowError(/not converged/);
   });
 
-  it("two consecutive successful runs leave activeDecompositionId on the second", async () => {
+  it("preserves the calendar error as cause on bad timeframe", async () => {
+    const goal = makeGoal({ scope: "x", successMetric: "x", constraints: "x",
+      motivation: "x", deadlineShape: "x" }, "forever");
+    const ops = makeStubOps();
+    try {
+      await handleDecompose({ goalId: goal.id },
+        { repos, ops, calendar, today: "2026-05-28" });
+      expect.fail("should have thrown");
+    } catch (err) {
+      expect((err as Error).message).toMatch(/p2: unparseable timeframe: forever/);
+      expect((err as Error).cause).toBeInstanceOf(Error);
+      expect(((err as Error).cause as Error).message).toMatch(/unparseable timeframe/);
+    }
+  });
+
+  it("two consecutive successful runs leave activeDecompositionId on the second, both trees intact", async () => {
     const goal = makeGoal({
       scope: "x", successMetric: "x", constraints: "x", motivation: "x", deadlineShape: "x",
     });
@@ -135,5 +159,9 @@ describe("handleDecompose", () => {
     expect(r2.decompositionId).toBeGreaterThan(r1.decompositionId);
     expect(repos.goals.get(goal.id)?.activeDecompositionId).toBe(r2.decompositionId);
     expect(repos.decompositions.listForGoal(goal.id)).toHaveLength(2);
+
+    // Versioning invariant: run 1's tree must still be queryable.
+    expect(repos.monthlies.listForDecomposition(r1.decompositionId)).toHaveLength(6);
+    expect(repos.monthlies.listForDecomposition(r2.decompositionId)).toHaveLength(6);
   });
 });

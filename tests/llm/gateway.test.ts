@@ -208,4 +208,43 @@ describe("llm-gateway", () => {
     expect(chatCalls).toBe(1);
     expect(embedCalls).toBe(1);
   });
+
+  it("bypassCache=true skips the cache read and always hits the network", async () => {
+    let calls = 0;
+    const fetchFn = async () => {
+      calls++;
+      return recordedFetch({ answer: "fresh" })();
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const req = { model: "m", messages: [{ role: "user" as const, content: "q" }], schema };
+    await gw.complete(req);
+    await gw.complete({ ...req, bypassCache: true });
+    expect(calls).toBe(2);
+  });
+
+  it("bypassCache=true skips the cache write so subsequent calls cannot hit cache", async () => {
+    let calls = 0;
+    const fetchFn = async () => {
+      calls++;
+      return recordedFetch({ answer: "fresh" })();
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const req = { model: "m", messages: [{ role: "user" as const, content: "q" }], schema, bypassCache: true };
+    await gw.complete(req);
+    await gw.complete({ ...req, bypassCache: false });
+    expect(calls).toBe(2);
+  });
+
+  it("bypassCache absent (default false) preserves caching behaviour", async () => {
+    let calls = 0;
+    const fetchFn = async () => {
+      calls++;
+      return recordedFetch({ answer: "cached" })();
+    };
+    const gw = makeGateway({ apiKey: "k", cache: repos.llmCache, fetchFn });
+    const req = { model: "m", messages: [{ role: "user" as const, content: "q" }], schema };
+    await gw.complete(req);
+    await gw.complete(req);
+    expect(calls).toBe(1);
+  });
 });

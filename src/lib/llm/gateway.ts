@@ -128,3 +128,5 @@ export function makeGateway(deps: GatewayDeps) {
 
   return { complete, batchComplete, embed, embedBatch };
 }
+
+export type Gateway = ReturnType<typeof makeGateway>;

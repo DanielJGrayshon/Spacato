@@ -16,5 +16,10 @@ export function openDb(file = "spacato.sqlite"): Db {
   } catch (err) {
     if (!String((err as Error).message).includes("duplicate column")) throw err;
   }
+  try {
+    db.exec("ALTER TABLE goal ADD COLUMN timeframe TEXT NOT NULL DEFAULT '6 months'");
+  } catch (err) {
+    if (!String((err as Error).message).includes("duplicate column")) throw err;
+  }
   return db;
 }

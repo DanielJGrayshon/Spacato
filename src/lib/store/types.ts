@@ -5,6 +5,7 @@ export interface Goal {
   convergedSpec: unknown | null;
   status: "eliciting" | "converged";
   activeDecompositionId: number | null;
+  timeframe: string;
 }
 
 export interface Decomposition {

@@ -120,3 +120,15 @@ describe("runInTransaction", () => {
     expect(repos.goals.get(result)).not.toBeNull();
   });
 });
+
+describe("goal.timeframe", () => {
+  it("defaults to '6 months' when not specified at create", () => {
+    const g = repos.goals.create({ title: "g", rawText: "g" });
+    expect(repos.goals.get(g.id)?.timeframe).toBe("6 months");
+  });
+
+  it("round-trips an explicit timeframe", () => {
+    const g = repos.goals.create({ title: "g", rawText: "g", timeframe: "by 2026-12-15" });
+    expect(repos.goals.get(g.id)?.timeframe).toBe("by 2026-12-15");
+  });
+});

@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS goal (
   status TEXT NOT NULL DEFAULT 'eliciting',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  active_decomposition_id INTEGER
+  active_decomposition_id INTEGER,
+  timeframe TEXT NOT NULL DEFAULT '6 months'
 );
 CREATE TABLE IF NOT EXISTS elicitation_state (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

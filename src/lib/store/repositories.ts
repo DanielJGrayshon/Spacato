@@ -21,6 +21,7 @@ function getGoal(db: Db, id: number): Goal | undefined {
     convergedSpec: row.converged_spec_json ? JSON.parse(row.converged_spec_json) : null,
     status: row.status,
     activeDecompositionId: row.active_decomposition_id ?? null,
+    timeframe: row.timeframe ?? "6 months",
   };
 }
 
@@ -116,10 +117,11 @@ function rowToDailyTask(row: any): DailyTask {
 export function makeRepositories(db: Db) {
   return {
     goals: {
-      create(input: { title: string; rawText: string }): Goal {
+      create(input: { title: string; rawText: string; timeframe?: string }): Goal {
+        const timeframe = input.timeframe ?? "6 months";
         const info = db
-          .prepare("INSERT INTO goal (title, raw_text) VALUES (?, ?)")
-          .run(input.title, input.rawText);
+          .prepare("INSERT INTO goal (title, raw_text, timeframe) VALUES (?, ?, ?)")
+          .run(input.title, input.rawText, timeframe);
         const inserted = getGoal(db, Number(info.lastInsertRowid));
         if (!inserted) {
           throw new Error(

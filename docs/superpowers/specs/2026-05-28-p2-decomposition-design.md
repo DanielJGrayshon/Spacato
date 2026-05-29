@@ -594,7 +594,7 @@ Live `gpt-4o-mini` (input $0.15 / 1M, output $0.60 / 1M as of writing):
 
 - **Layer 1** (1 call): goal context ~250 tokens in + ~6 × 60 tokens out ≈ 250 in / 360 out ≈ $0.00026.
 - **Layer 2** (6 calls): each ~400 tokens in + ~5 × 60 tokens out ≈ 6 × (400 in / 300 out) ≈ 2.4k in / 1.8k out ≈ $0.0014.
-- **Layer 3** (~28 calls): each ~600 tokens in + ~7 × 80 tokens out ≈ 28 × (600 in / 560 out) ≈ 16.8k in / 15.7k out ≈ $0.0119.
+- **Layer 3** (~28–30 calls): each ~600 tokens in + ~7 × 80 tokens out ≈ 28 × (600 in / 560 out) ≈ 16.8k in / 15.7k out ≈ $0.0119. The upper bound applies when the 6-month window contains months whose ISO weeks split into 5 calendar weeks rather than 4 — the calendar emits one extra weekly span per such month, so layer-3 fan-out is `Σ weeks_per_month`, typically 28–30.
 
 **Total per 6-month decomposition ≈ $0.013** at `gpt-4o-mini` rates. Roughly 2–3× the order of the semantic-distance spec's per-elicitation cost; still negligible per user per goal. Each `/api/decompose` call is a one-off (versioning means it isn't run often per goal); the bulk of P-stack cost remains the recurring P5 cycle.
 

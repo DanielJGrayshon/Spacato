@@ -1,0 +1,12 @@
+{
+  "title": "complete marathon training program",
+  "rawText": "complete a marathon training program over 6 months",
+  "timeframe": "6 months",
+  "convergedSpec": {
+    "scope": "complete marathon training program",
+    "successMetric": "successfully follow the training plan",
+    "constraints": "dedicated training sessions without injury",
+    "motivation": "build endurance and stamina",
+    "deadlineShape": "progress tracked over 6-month training period"
+  }
+}

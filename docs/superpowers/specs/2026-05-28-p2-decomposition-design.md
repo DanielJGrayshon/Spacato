@@ -103,7 +103,7 @@ POST /api/decompose { goalId }
   200 { decompositionId, tree }
 ```
 
-**Topology.** Per-parent LLM calls, sibling-parallel via `Promise.all`. Matches the established P5 precedent (HANDOFF §6: *"P5 genome operators use per-genome `gw.complete()` calls. Concurrency comes from `esc-core.evolve` running each phase via `Promise.all` — not from `batchComplete`. Cleaner operator contract."*). Total ~35 calls for a 6-month plan in 3 waves (1 monthly + 6 weekly + ~28 daily). The existing `gw.maxConcurrency` worker-pool governs actual parallelism — default ≈8 means layer 3 runs in ~4 concurrent sub-waves of ~8.
+**Topology.** Per-parent LLM calls, sibling-parallel via `Promise.all`. Matches the established P5 precedent (HANDOFF §6: *"P5 genome operators use per-genome `gw.complete()` calls. Concurrency comes from `esc-core.evolve` running each phase via `Promise.all` — not from `batchComplete`. Cleaner operator contract."*). Total ~35 calls for a 6-month plan in 3 waves (1 monthly + 6 weekly + ~28 daily). **No throttle:** `gw.maxConcurrency` only bounds `batchComplete`/`embedBatch`; P2's `Promise.all` over individual `gw.complete()` calls fires every layer-3 call concurrently. Acceptable for a single-user local app against `gpt-4o-mini` (well within rate limits); if rate-limit errors ever surface, the fix is a `pLimit`-style wrapper around the layer-3 fan-out.
 
 **Heuristic / LLM split** (heuristics-first per role prompt).
 - *Heuristic:* calendar skeleton, week clipping, weight normalisation (`1/N` per parent), retry counting, transaction boundary, bulk insert, active-pointer flip, FK stamping, `concretization_level` defaulting.

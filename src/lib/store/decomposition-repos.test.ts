@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { openDb } from "./db";
 import { makeRepositories } from "./repositories";
 import type Database from "better-sqlite3";
@@ -81,13 +84,39 @@ describe("goals.setActiveDecomposition", () => {
     repos.goals.setActiveDecomposition(g.id, d.id);
     expect(repos.goals.get(g.id)?.activeDecompositionId).toBe(d.id);
   });
+
+  it("setActiveDecomposition throws when goalId does not exist", () => {
+    const g = repos.goals.create({ title: "g", rawText: "g" });
+    const d = repos.decompositions.create({ goalId: g.id });
+    expect(() => repos.goals.setActiveDecomposition(99999, d.id))
+      .toThrowError(/goal 99999 not found/);
+  });
 });
 
 describe("schema init is idempotent", () => {
-  it("opening a DB twice does not error on the defensive ALTER", () => {
-    const db1 = openDb(":memory:");
-    const db2 = openDb(":memory:");
-    expect(() => makeRepositories(db1)).not.toThrow();
-    expect(() => makeRepositories(db2)).not.toThrow();
+  it("opening the same file-backed DB twice does not error on the defensive ALTER", () => {
+    const tmp = path.join(os.tmpdir(), `spacato-test-${crypto.randomUUID()}.sqlite`);
+    try {
+      const db1 = openDb(tmp);
+      makeRepositories(db1);
+      db1.close();
+
+      const db2 = openDb(tmp);
+      expect(() => makeRepositories(db2)).not.toThrow();
+      db2.close();
+    } finally {
+      try { fs.unlinkSync(tmp); } catch { /* file may not exist on early-fail; ignore */ }
+    }
+  });
+});
+
+describe("runInTransaction", () => {
+  it("propagates the return value of fn", () => {
+    const result = repos.runInTransaction(() => {
+      const g = repos.goals.create({ title: "x", rawText: "x" });
+      return g.id;
+    });
+    expect(result).toBeGreaterThan(0);
+    expect(repos.goals.get(result)).not.toBeNull();
   });
 });

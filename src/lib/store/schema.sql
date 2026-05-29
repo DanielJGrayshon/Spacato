@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS goal (
   status TEXT NOT NULL DEFAULT 'eliciting',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  active_decomposition_id INTEGER REFERENCES decomposition(id)
+  active_decomposition_id INTEGER
 );
 CREATE TABLE IF NOT EXISTS elicitation_state (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS query_genome_state (
 CREATE TABLE IF NOT EXISTS decomposition (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   goal_id    INTEGER NOT NULL REFERENCES goal(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS monthly (

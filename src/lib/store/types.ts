@@ -10,7 +10,7 @@ export interface Goal {
 export interface Decomposition {
   id: number;
   goalId: number;
-  createdAt: number;
+  createdAt: string;
 }
 
 export interface Monthly {

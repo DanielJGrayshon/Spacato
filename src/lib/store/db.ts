@@ -12,7 +12,7 @@ export function openDb(file = "spacato.sqlite"): Db {
   const schema = readFileSync(path.join(process.cwd(), "src/lib/store/schema.sql"), "utf8");
   db.exec(schema);
   try {
-    db.exec("ALTER TABLE goal ADD COLUMN active_decomposition_id INTEGER REFERENCES decomposition(id)");
+    db.exec("ALTER TABLE goal ADD COLUMN active_decomposition_id INTEGER");
   } catch (err) {
     if (!String((err as Error).message).includes("duplicate column")) throw err;
   }

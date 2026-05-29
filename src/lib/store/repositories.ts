@@ -142,8 +142,11 @@ export function makeRepositories(db: Db) {
         }
       },
       setActiveDecomposition(goalId: number, decompositionId: number): void {
-        db.prepare("UPDATE goal SET active_decomposition_id = ? WHERE id = ?")
+        const info = db.prepare("UPDATE goal SET active_decomposition_id = ? WHERE id = ?")
           .run(decompositionId, goalId);
+        if (info.changes === 0) {
+          throw new Error(`goals.setActiveDecomposition: goal ${goalId} not found`);
+        }
       },
     },
     llmCache: {
@@ -401,8 +404,8 @@ export function makeRepositories(db: Db) {
         return rows.map(rowToDailyTask);
       },
     },
-    runInTransaction(fn: () => void): void {
-      db.transaction(fn)();
+    runInTransaction<T>(fn: () => T): T {
+      return db.transaction(fn)();
     },
   };
 }
